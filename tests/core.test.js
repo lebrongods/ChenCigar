@@ -42,7 +42,7 @@ module.exports = [
         // 无查获拦截
         await page.click('[data-action=package]');
         await page.waitForSelector('#pack-result.alert-danger');
-        assert((await page.textContent('#pack-result')).includes('未登记查获卷烟'), '应拦截：未登记查获卷烟');
+        assert((await page.textContent('#pack-result')).includes('未登记涉案物品'), '应拦截：未登记涉案物品');
         // 登记并拍选拍项
         await L.addSeized(page, { qty: 20, unit: '条', barcode: '075015' });
         await L.captureItem(page, '查获数量清点照片', L.img('sharp2'));
