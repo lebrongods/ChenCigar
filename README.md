@@ -14,14 +14,32 @@
 | `docs/使用说明.md` | 给稽查人员的一页使用说明（含耗时实测方法） |
 | `docs/待用户提供的数据与材料.md` | 报告和部署需要用户补充的材料清单 |
 
-## 构建与测试
+## 在自己电脑上使用
+
+**只想用系统**：双击 `证据采集系统.html`，用 Chrome / Edge / Safari 打开即可，不需要安装任何东西。
+直接打开文件时处于"本机存储模式"：数据只保存在这台电脑的这个浏览器里，多人共享需部署到支持共享存储的网页环境。
+
+**想修改代码或跑测试**（Windows / macOS / Linux 均可）：
+
+1. 安装 [Node.js](https://nodejs.org/) 18 或更高版本（LTS 版即可）。
+2. 下载代码：`git clone https://github.com/lebrongods/ChenCigar.git`，然后 `cd ChenCigar`。
+3. 安装依赖并下载测试用浏览器（只需一次）：
 
 ```bash
-npm install          # 安装 jszip、playwright（不需要 playwright install，使用本机 Chromium）
-npm run build        # 生成 证据采集系统.html
-npm test             # 构建 + 运行全部测试，并更新 tests/测试结果.md
-node tests/screenshots.js   # 重新生成截图
+npm install
+npx playwright install chromium
 ```
+
+4. 常用命令：
+
+```bash
+npm run build               # 用 src/app.html 生成 证据采集系统.html（改了源码后要执行）
+npm test                    # 构建 + 运行全部测试，并更新 tests/测试结果.md（约 2–3 分钟）
+node tests/run-all.js p0    # 只跑某一组（core / accounts / seized / p0 / p1），或用例名中的关键词
+node tests/screenshots.js   # 重新生成 screenshots/ 下的截图
+```
+
+修改系统时请改 `src/app.html`，不要直接改 `证据采集系统.html`（它会被构建覆盖）。
 
 ## 功能概览
 
