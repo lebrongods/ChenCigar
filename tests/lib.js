@@ -167,11 +167,12 @@ async function captureAllRequired(page) {
   }
   return ids.length;
 }
-async function addSeized(page, { brand = '', qty = '', unit = '条', barcode = '' } = {}) {
+async function addSeized(page, { brand = '', qty = '', unit = '条', barcode = '', price } = {}) {
   await page.click('[data-action=seized-add]');
   await page.waitForSelector('form[data-form=seized]');
   if (barcode) await page.fill('form[data-form=seized] [name=barcode]', barcode);
   if (brand) await page.fill('form[data-form=seized] [name=brand]', brand);
+  if (price !== undefined) await page.fill('form[data-form=seized] [name=price]', String(price));
   if (qty !== '') await page.fill('form[data-form=seized] [name=qty]', String(qty));
   await page.selectOption('form[data-form=seized] [name=unit]', unit);
   await page.click('form[data-form=seized] [type=submit]');

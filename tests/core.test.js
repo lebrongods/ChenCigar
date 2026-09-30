@@ -44,7 +44,7 @@ module.exports = [
         await page.waitForSelector('#pack-result.alert-danger');
         assert((await page.textContent('#pack-result')).includes('未登记查获卷烟'), '应拦截：未登记查获卷烟');
         // 登记并拍选拍项
-        await L.addSeized(page, { brand: '某品牌（硬）', qty: 20, unit: '条', barcode: '6901028075015' });
+        await L.addSeized(page, { qty: 20, unit: '条', barcode: '075015' });
         await L.captureItem(page, '查获数量清点照片', L.img('sharp2'));
         const { zip, suggested } = await L.packageCase(page);
         assert(/^X烟立〔2026〕001号_证据包_\d{12}\.zip$/.test(suggested), '证据包文件名不符：' + suggested);
@@ -53,13 +53,14 @@ module.exports = [
         expect.forEach(f => assert(u.files.includes(f), '证据包缺少文件：' + f));
         assert(u.files.filter(f => f.endsWith('.jpg')).length === 9, '应有 9 张照片，实际 ' + u.files.length);
         const m = u.manifest;
-        ['案件编号：X烟立〔2026〕001号', '案件类型：无证运输', '采集人（案件创建人）：管理员甲', '承办人：未分配', '证据包生成时间', 'SHA-256：', '品规：某品牌（硬）　数量：20 条　条码：6901028075015', '合计：20 条', '系统：涉烟案件现场证据采集系统 v'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
+        ['案件编号：X烟立〔2026〕001号', '案件类型：无证运输', '采集人（案件创建人）：管理员甲', '承办人：未分配', '证据包生成时间', 'SHA-256：', '品规：中华（硬）　数量：20 条　条码：6901028075015', '单价：450 元/条（价格目录 2025年下半年）　小计：9,000 元', '合计：20 条；涉案金额 9,000 元', '核价表：X烟立〔2026〕001号_涉案烟草专卖品核价表.xlsx', '系统：涉烟案件现场证据采集系统 v'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
         assert(!m.includes('防篡改措施。') || m.includes('不是防篡改措施'), '清单不得声明防篡改');
+        assert(u.files.includes('X烟立〔2026〕001号_涉案烟草专卖品核价表.xlsx'), '证据包应含核价表');
         const check = Z.sha256check(u.dir);
-        assert((check.match(/: OK/g) || []).length === 9, 'sha256sum -c 应 9 项 OK：' + check);
+        assert((check.match(/: OK/g) || []).length === 10, 'sha256sum -c 应 10 项 OK（9 张照片 + 核价表）：' + check);
         const st = JSON.parse(w.shared.get('case-index'))[0];
         assert(st.status === 'complete' && st.lastPackagedAt, '打包后状态应为已齐全且记录打包时间');
-        return '9 张照片 + 清单 + SHA256SUMS；sha256sum -c 9/9 OK';
+        return '9 张照片 + 核价表 + 清单 + SHA256SUMS；sha256sum -c 10/10 OK';
       } finally { await p.close(); }
     }
   },

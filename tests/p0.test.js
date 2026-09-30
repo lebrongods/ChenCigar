@@ -7,7 +7,7 @@ const { assert } = L;
 async function fullCase(page, number, type) {
   await L.createCase(page, number, type || '无证运输');
   await L.captureAllRequired(page);
-  await L.addSeized(page, { brand: '某品牌', qty: 12, barcode: '6901028075015' });
+  await L.addSeized(page, { qty: 12, barcode: '075015' });
 }
 
 module.exports = [
@@ -164,7 +164,7 @@ module.exports = [
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
         const m = u.manifest;
-        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.0.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
+        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.1.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
         const jpgs = u.files.filter(f => f.endsWith('.jpg'));
         let checked = 0;
         for (const f of jpgs.slice(0, 5)) {
@@ -206,7 +206,8 @@ module.exports = [
           views.push(label);
         };
         await check('案件详情');
-        await page.click('[data-action=seized-add]'); await check('查获登记弹窗'); await page.click('[data-action=modal-close]');
+        await page.click('[data-action=seized-add]'); await page.fill('form[data-form=seized] [name=barcode]', '19'); await check('查获登记弹窗');
+        await page.fill('form[data-form=seized] [name=barcode]', '075015'); await page.fill('form[data-form=seized] [name=qty]', '12345'); await check('查获登记弹窗（已带出价格）'); await page.click('[data-action=modal-close]');
         await page.click('[data-action=back]'); await check('案件列表');
         await page.click('[data-action=new-case]'); await check('新建案件'); await page.click('[data-action=back]');
         await page.click('.tabbar [data-view=admin]'); await check('管理');
@@ -214,7 +215,8 @@ module.exports = [
         await page.click('[data-action=goto][data-view=templates]'); await check('模板列表');
         await page.click('[data-action=tpl-edit] >> nth=0'); await check('模板编辑'); await page.click('[data-action=back]');
         await page.click('[data-action=back]');
-        await page.click('[data-action=goto][data-view=barcodes]'); await check('条码库'); await page.click('[data-action=back]');
+        await page.click('[data-action=goto][data-view=prices]'); await page.fill('[data-price-q]', '芙蓉王'); await check('价格目录与核价表'); await page.click('[data-action=back]');
+        await page.click('[data-action=goto][data-view=barcodes]'); await check('本地条码库'); await page.click('[data-action=back]');
         await page.click('[data-action=goto][data-view=backup]'); await check('备份'); await page.click('[data-action=back]');
         await page.click('.tabbar [data-view=me]'); await check('我的/关于');
         return views.length + ' 个页面 × 3 种宽度通过';
