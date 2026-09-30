@@ -1,0 +1,65 @@
+// 生成报告用截图（手机视口 390×844，2 倍像素），输出到 screenshots/
+const fs = require('fs');
+const path = require('path');
+const L = require('./lib');
+
+(async () => {
+  await L.makeImages();
+  const out = path.join(L.ROOT, 'screenshots');
+  fs.mkdirSync(out, { recursive: true });
+  const w = L.createWorld();
+  const ctxOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 };
+  const p = await L.openPage(w, ctxOpts);
+  const page = p.page;
+  const shot = async (name, full) => { await page.waitForTimeout(250); await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove())); await page.screenshot({ path: path.join(out, name + '.png'), fullPage: !!full }); console.log('截图', name); };
+
+  await L.setupAdmin(page, '王管理');
+  await L.addUser(page, '李稽查', 'inspector', '1111');
+  await L.addUser(page, '赵稽查', 'inspector', '2222');
+  await page.click('[data-action=goto][data-view=users]');
+  await shot('01-用户管理');
+  await page.click('[data-action=back]');
+  await page.click('[data-action=goto][data-view=templates]');
+  await page.click('.list-item:has-text("无证运输") [data-action=tpl-edit]');
+  await shot('02-模板管理', true);
+  await page.click('[data-action=back]'); await page.click('[data-action=back]');
+  await page.click('.tabbar [data-view=cases]');
+
+  await L.createCase(page, '示例〔2026〕001号', '无证运输', { address: '示例路 1 号', party: '张某' });
+  await L.captureItem(page, '车头照片', L.img('sharp'));
+  await L.captureItem(page, '车尾车牌照片', L.img('sharp2'));
+  await L.captureItem(page, '货厢后备箱照片', L.img('dark_0.85'));
+  await page.click('[data-action=package]');
+  await page.waitForSelector('#pack-result.alert-danger');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await shot('03-必拍缺项拦截');
+  await page.evaluate(() => document.querySelector('.section-title').scrollIntoView());
+  await shot('04-采集进度页');
+
+  await L.captureAllRequired(page);
+  await page.click('[data-action=seized-add]');
+  await page.fill('form[data-form=seized] [name=barcode]', '6901028075015');
+  await page.fill('form[data-form=seized] [name=brand]', '示例品规（硬）');
+  await page.fill('form[data-form=seized] [name=qty]', '20');
+  await shot('05-查获卷烟登记');
+  await page.click('form[data-form=seized] [type=submit]');
+  await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
+  await L.packageCase(page);
+  await shot('06-证据包生成完成');
+  await page.click('[data-action=assign-case]');
+  const uid = JSON.parse(w.shared.get('users')).find(u => u.name === '李稽查').id;
+  await page.selectOption('form[data-form=assign] [name=user]', uid);
+  await page.click('form[data-form=assign] [type=submit]');
+  await page.waitForFunction(() => window.__EVIDENCE_APP__.idle);
+  await page.click('[data-action=back]');
+  await L.createCase(page, '示例〔2026〕002号', '假烟销售');
+  await L.captureItem(page, '外包装整体照片', L.img('sharp3'));
+  await page.click('[data-action=back]');
+  await L.createCase(page, '示例〔2026〕003号', '无证经营');
+  await page.click('[data-action=back]');
+  await page.waitForSelector('#case-list .case-card >> nth=2');
+  await shot('07-案件列表');
+  await page.click('.tabbar [data-view=me]');
+  await shot('08-关于与使用限制', true);
+  await L.closeBrowser();
+})().catch(async e => { console.error(e); await L.closeBrowser(); process.exit(1); });

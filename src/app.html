@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d5c4a">
+<meta name="format-detection" content="telephone=no">
+<title>涉烟案件现场证据采集系统</title>
+<style>
+:root {
+  --pri: #1d5c4a; --pri-d: #154637; --pri-l: #e6f0ec;
+  --bg: #f2f4f3; --card: #fff; --text: #1c2421; --muted: #66706c; --line: #d9e0dc;
+  --danger: #b83227; --danger-l: #fbeaea; --warn: #a86400; --warn-l: #fff4e0;
+  --ok: #1e7a45; --ok-l: #e5f5eb; --radius: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  -webkit-text-size-adjust: 100%; }
+body { overflow-x: hidden; }
+body.modal-open { overflow: hidden; }
+img { max-width: 100%; display: block; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+h3 { font-size: 16px; margin: 0 0 8px; }
+p { margin: 6px 0; }
+#view-root { max-width: 720px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--pri); color: #fff; display: flex; align-items: center;
+  gap: 8px; padding: 6px 12px; min-height: 52px; padding-top: calc(6px + env(safe-area-inset-top)); }
+.topbar .title { flex: 1; min-width: 0; font-weight: 600; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .who { font-size: 13px; opacity: .9; white-space: nowrap; }
+.topbar .back { background: transparent; color: #fff; border: 0; font-size: 16px; min-height: 44px; min-width: 44px; padding: 0 6px; cursor: pointer; }
+.content { padding: 12px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.06); border: 1px solid var(--line); }
+.card.alert-danger { background: var(--danger-l); border-color: #efc2be; }
+.card.alert-warn { background: var(--warn-l); border-color: #f0d9a8; }
+.card.alert-ok { background: var(--ok-l); border-color: #b9e0c7; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.row.between { justify-content: space-between; }
+.row.nowrap { flex-wrap: nowrap; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.warn-text { color: var(--warn); }
+.danger-text { color: var(--danger); }
+.ok-text { color: var(--ok); }
+.pre { white-space: pre-wrap; }
+.break { overflow-wrap: anywhere; word-break: break-all; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 44px; min-width: 44px;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--text);
+  font-size: 16px; line-height: 1.2; cursor: pointer; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.btn:active { filter: brightness(.94); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--pri); border-color: var(--pri); color: #fff; }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger-outline { color: var(--danger); border-color: #e3a8a2; }
+.btn-sm { min-height: 44px; padding: 6px 10px; font-size: 14px; }
+.btn-block { display: flex; width: 100%; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.btn-row > .btn { flex: 1 1 120px; }
+label.field { display: block; margin-bottom: 12px; }
+label.field > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+input[type=text], input[type=password], input[type=number], input[type=search], select, textarea {
+  width: 100%; min-height: 44px; padding: 8px 10px; font-size: 16px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--text); font-family: inherit; }
+textarea { min-height: 72px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--pri); outline-offset: 0; border-color: var(--pri); }
+.check { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
+.check input { width: 22px; height: 22px; }
+.badge { display: inline-block; font-size: 12px; line-height: 18px; padding: 1px 8px; border-radius: 10px; background: #eceff0; color: var(--muted); white-space: nowrap; vertical-align: middle; }
+.badge.req { background: var(--danger-l); color: var(--danger); }
+.badge.opt { background: #eef1f7; color: #4b5b7a; }
+.badge.ok { background: var(--ok-l); color: var(--ok); }
+.badge.warn { background: var(--warn-l); color: var(--warn); }
+.badge.draft { background: #eceff0; color: #4d5652; }
+.badge.admin { background: #e8e3f6; color: #4f3a8f; }
+.progress { height: 8px; background: #e3e8e5; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.progress .bar { height: 100%; background: var(--pri); }
+.progress.done .bar { background: var(--ok); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; background: #fff; border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom); }
+.tabbar button { flex: 1; min-height: 56px; border: 0; background: transparent; font-size: 15px; color: var(--muted); cursor: pointer; }
+.tabbar button.active { color: var(--pri); font-weight: 700; box-shadow: inset 0 3px 0 var(--pri); }
+.actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: #fff; border-top: 1px solid var(--line);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+.actionbar .inner { max-width: 696px; margin: 0 auto; display: flex; gap: 8px; }
+.actionbar .btn { flex: 1; }
+.case-card { cursor: pointer; }
+.case-no { font-size: 16px; overflow-wrap: anywhere; }
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.filters .full { grid-column: 1 / -1; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 560px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: #fff; min-width: 0; }
+.tile.missing { border-color: #e7b3ad; background: #fffafa; }
+.tile.done { border-color: #b9e0c7; }
+.tile.flash { animation: flash 1.2s ease 2; }
+@keyframes flash { 50% { box-shadow: 0 0 0 4px #f5b041; } }
+.thumb { aspect-ratio: 4 / 3; background: #eef1ef; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+.thumb .ph { color: #9aa39f; font-size: 14px; }
+.tile-name { font-size: 14px; margin: 6px 0 2px; overflow-wrap: anywhere; }
+.tile-actions { display: flex; gap: 6px; margin-top: 6px; }
+.tile-actions .btn { flex: 1; padding: 6px 4px; }
+.list-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.list-item:first-child { border-top: 0; }
+.list-item .mini { width: 64px; height: 48px; flex: none; border-radius: 6px; overflow: hidden; background: #eef1ef; }
+.list-item .mini img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+.list-item.invalid { background: #fffafa; }
+.kv { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 4px 8px; font-size: 14px; }
+.kv > div:nth-child(odd) { color: var(--muted); }
+.kv > div { overflow-wrap: anywhere; }
+details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.log-line { font-size: 13px; padding: 4px 0; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
+.menu-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 56px; padding: 10px 14px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: #fff; margin-bottom: 10px; font-size: 16px; text-align: left; cursor: pointer; color: var(--text); }
+.menu-item .desc { display: block; font-size: 13px; color: var(--muted); }
+.tpl-cat { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.tpl-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.tpl-item .check { min-height: 44px; font-size: 13px; gap: 4px; }
+.tpl-item .check input { width: 20px; height: 20px; }
+.modal-mask { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
+@media (min-width: 560px) { .modal-mask { align-items: center; } }
+.modal { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; border-radius: 14px 14px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+@media (min-width: 560px) { .modal { border-radius: 14px; } }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.compare figure { margin: 0; }
+.compare figcaption { font-size: 13px; color: var(--muted); text-align: center; margin-top: 4px; }
+.viewer-img { width: 100%; border-radius: 8px; background: #111; min-height: 120px; }
+#toast-root { position: fixed; left: 0; right: 0; top: calc(60px + env(safe-area-inset-top)); z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; padding: 0 12px; }
+.toast { max-width: 520px; width: 100%; background: #26312d; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 15px; box-shadow: 0 4px 12px rgba(0,0,0,.2); pointer-events: auto; }
+.toast.error { background: var(--danger); }
+.toast.warn { background: #8a5a00; }
+.toast.ok { background: var(--ok); }
+#save-banner { position: fixed; left: 0; right: 0; top: 0; z-index: 60; background: var(--danger); color: #fff; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; display: flex; gap: 8px; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+#save-banner[hidden] { display: none; }
+#save-banner .msg { flex: 1; font-size: 14px; }
+#save-banner button { background: #fff; color: var(--danger); border: 0; border-radius: 6px; min-height: 44px; min-width: 60px; font-size: 15px; }
+#busy { position: fixed; inset: 0; z-index: 80; background: rgba(255,255,255,.7); display: flex; align-items: center; justify-content: center; }
+#busy[hidden] { display: none; }
+#busy .box { background: #26312d; color: #fff; padding: 14px 20px; border-radius: 10px; }
+.empty { text-align: center; color: var(--muted); padding: 32px 12px; }
+.type-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.type-choice label { border: 2px solid var(--line); border-radius: 8px; padding: 10px; min-height: 56px; display: flex; align-items: center; gap: 6px; cursor: pointer; background: #fff; overflow-wrap: anywhere; }
+.type-choice input { width: 20px; height: 20px; flex: none; }
+.type-choice label:has(input:checked) { border-color: var(--pri); background: var(--pri-l); }
+.section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 8px; }
+.section-title h2 { margin: 0; }
+</style>
+</head>
+<body>
+<div id="view-root"></div>
+<div id="modal-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+<div id="save-banner" role="alert" hidden><span class="msg"></span><button type="button" id="save-banner-close">知道了</button></div>
+<div id="busy" hidden><div class="box">处理中…</div></div>
+<input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+<input type="file" id="album-input" accept="image/*" hidden>
+<input type="file" id="import-input" accept="application/json,.json" hidden>
+<!-- JSZip 3.10.1（MIT 许可），内联以支持无网络环境打包 -->
+<script>/*__JSZIP_INLINE__*/</script>
+<script>
+(function () {
+  'use strict';
+
+  /* ========================= 常量 ========================= */
+  const APP_VERSION = '2.0.0';
+  const PBKDF2_ITER = 100000;
+  const LOCK_MAX = 5;
+  const LOCK_MS = 30000;
+  const PHOTO_MAX = 1280;
+  const PHOTO_Q = 0.72;
+  const THUMB_MAX = 320;
+  const THUMB_Q = 0.6;
+  const REFRESH_MS = 30000;
+  const GEO_TIMEOUT = 6000;
+  // 拍照质量阈值（在长边 480px 的灰度图上计算）；只提示、不拦截
+  const QUALITY = { darkMean: 60, darkClip: 0.6, brightMean: 205, brightClip: 0.4, blurVar: 60 };
+  const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf'];
+  const UNITS = ['条', '包', '支', '件'];
+  const PIN_RE = /^\d{4,6}$/;
+  const K = { templates: 'templates', index: 'case-index', users: 'users', settings: 'settings', barcodes: 'barcode-dict', session: 'current-session', prefs: 'prefs' };
+  const caseKey = id => 'case:' + id;
+  const photoKey = id => 'photo:' + id;
+
+  /* ========================= 工具函数 ========================= */
+  const $ = sel => document.querySelector(sel);
+  const root = $('#view-root');
+  const modalRoot = $('#modal-root');
+  const cameraInput = $('#camera-input');
+  const albumInput = $('#album-input');
+  const importInput = $('#import-input');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+  }
+  function fmtDate(ts) { return ts ? fmtTime(ts).slice(0, 16) : ''; }
+  function stamp(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + pad2(d.getHours()) + pad2(d.getMinutes());
+  }
+  function tzLabel() {
+    const off = -new Date().getTimezoneOffset();
+    const sign = off >= 0 ? '+' : '-';
+    return 'UTC' + sign + pad2(Math.floor(Math.abs(off) / 60)) + ':' + pad2(Math.abs(off) % 60);
+  }
+  function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function safeName(s) {
+    return String(s || '').trim().replace(/[\\/:*?"<>|\s\u0000-\u001f]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 60) || '未命名';
+  }
+  function fmtGeo(g) { return g ? g.lat.toFixed(6) + ', ' + g.lng.toFixed(6) + '（±' + g.acc + ' 米）' : ''; }
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  /* ========================= 存储层 ========================= */
+  // 优先使用宿主提供的 window.storage；没有时退化为本机 IndexedDB；再不行退化为内存（刷新即丢失）
+  const Store = (function () {
+    let backend = 'memory';
+    let db = null;
+    const mem = new Map();
+    const full = (key, shared) => (shared ? 'S|' : 'P|') + key;
+    function hostOk() { return !!(window.storage && typeof window.storage.get === 'function' && typeof window.storage.set === 'function'); }
+    function openDb() {
+      return new Promise(resolve => {
+        try {
+          const req = indexedDB.open('tobacco-evidence', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('kv');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+          req.onblocked = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    }
+    function idb(mode, fn) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', mode);
+        const r = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => resolve(r.result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('aborted'));
+      });
+    }
+    return {
+      get backend() { return backend; },
+      async init() {
+        if (hostOk()) { backend = 'host'; return; }
+        if (window.indexedDB) {
+          db = await openDb();
+          if (db) {
+            backend = 'indexeddb';
+            try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 忽略 */ }
+            return;
+          }
+        }
+        backend = 'memory';
+      },
+      async get(key, shared) {
+        try {
+          if (backend === 'host') {
+            const r = await window.storage.get(key, shared);
+            if (r == null) return null;
+            if (typeof r === 'string') return r;
+            return r.value == null ? null : r.value;
+          }
+          if (backend === 'indexeddb') {
+            const v = await idb('readonly', s => s.get(full(key, shared)));
+            return v == null ? null : v;
+          }
+          return mem.has(full(key, shared)) ? mem.get(full(key, shared)) : null;
+        } catch (e) { return null; }
+      },
+      async set(key, value, shared) {
+        try {
+          if (backend === 'host') {
+            const r = await window.storage.set(key, value, shared);
+            return !(r === null || r === false);
+          }
+          if (backend === 'indexeddb') { await idb('readwrite', s => s.put(value, full(key, shared))); return true; }
+          mem.set(full(key, shared), value);
+          return true;
+        } catch (e) { return false; }
+      },
+      async del(key, shared) {
+        try {
+          if (backend === 'host') { if (window.storage.delete) await window.storage.delete(key, shared); return true; }
+          if (backend === 'indexeddb') { await idb('readwrite', s => s.delete(full(key, shared))); return true; }
+          mem.delete(full(key, shared));
+          return true;
+        } catch (e) { return false; }
+      },
+      // 列出共享区中以 prefix 开头的 key（用于重建索引），不支持时返回 null
+      async keys(prefix, shared) {
+        try {
+          if (backend === 'host') {
+            if (typeof window.storage.list !== 'function') return null;
+            const r = await window.storage.list(prefix, shared);
+            const arr = Array.isArray(r) ? r : (r && r.keys) || [];
+            return arr.map(k => typeof k === 'string' ? k : k.key).filter(k => k && k.startsWith(prefix));
+          }
+          const pre = full(prefix, shared);
+          if (backend === 'indexeddb') {
+            const all = await idb('readonly', s => s.getAllKeys());
+            return all.filter(k => String(k).startsWith(pre)).map(k => String(k).slice(2));
+          }
+          return [...mem.keys()].filter(k => k.startsWith(pre)).map(k => k.slice(2));
+        } catch (e) { return null; }
+      }
+    };
+  })();
+
+  function describeKey(key) {
+    if (key.startsWith('photo:')) return '照片';
+    if (key.startsWith('case:') || key === K.index) return '案件数据';
+    if (key === K.users) return '账号数据';
+    if (key === K.templates) return '案件模板';
+    if (key === K.barcodes) return '条码库';
+    return '系统数据';
+  }
+  function reportSaveFail(key) {
+    const b = $('#save-banner');
+    b.querySelector('.msg').textContent = '保存失败：' + describeKey(key) + '未能写入存储，刚才的修改可能没有保存。请检查手机存储空间后重试，并尽快由管理员导出备份。';
+    b.hidden = false;
+    toast('保存失败：' + describeKey(key) + '未写入存储', 'error', 6000);
+  }
+  async function getJSON(key, shared, fallback) {
+    const raw = await Store.get(key, shared);
+    if (raw == null) return fallback;
+    try { return JSON.parse(raw); } catch (e) { return fallback; }
+  }
+  async function setJSON(key, value, shared) {
+    const ok = await Store.set(key, JSON.stringify(value), shared);
+    if (!ok) reportSaveFail(key);
+    return ok;
+  }
+
+  /* ========================= 加密（PIN 与摘要） ========================= */
+  function hasSubtle() { return !!(window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === 'function'); }
+  function toB64(buf) {
+    const bytes = new Uint8Array(buf); let s = '';
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+  function fromB64(b64) {
+    const s = atob(b64); const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+  function toHex(buf) { return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join(''); }
+  async function sha256Hex(data) {
+    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+    return toHex(await crypto.subtle.digest('SHA-256', bytes));
+  }
+  async function pbkdf2(pin, salt, iter) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, key, 256);
+    return toB64(bits);
+  }
+  async function makePinHash(pin) {
+    if (!hasSubtle()) throw new Error('当前浏览器不支持 Web Crypto，无法保存 PIN');
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    return 'pbkdf2:sha256:' + PBKDF2_ITER + ':' + toB64(salt) + ':' + (await pbkdf2(pin, salt, PBKDF2_ITER));
+  }
+  function sameStr(a, b) {
+    if (a.length !== b.length) return false;
+    let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return r === 0;
+  }
+  // 返回 {ok, upgrade}；识别旧版 sha256: 与 plain: 格式，登录成功后自动升级
+  async function verifyPin(user, pin) {
+    const h = String(user.pinHash || '');
+    if (!hasSubtle()) return { ok: false, error: 'nocrypto' };
+    if (h.startsWith('pbkdf2:')) {
+      const p = h.split(':');
+      const iter = parseInt(p[2], 10);
+      const calc = await pbkdf2(pin, fromB64(p[3]), iter);
+      const ok = sameStr(calc, p[4]);
+      return { ok, upgrade: ok && iter < PBKDF2_ITER };
+    }
+    if (h.startsWith('sha256:')) {
+      const stored = h.slice(7);
+      const hex = await sha256Hex(pin);
+      const ok = sameStr(hex, stored.toLowerCase()) || sameStr(toB64(fromHex(hex)), stored);
+      return { ok, upgrade: ok };
+    }
+    if (h.startsWith('plain:')) {
+      const ok = sameStr(h.slice(6), pin);
+      return { ok, upgrade: ok };
+    }
+    return { ok: false };
+  }
+  function fromHex(hex) { const out = new Uint8Array(hex.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16); return out; }
+  const loginFails = {}; // 仅页面内存计数（体验层限制）
+
+  /* ========================= 默认模板 ========================= */
+  // 以下必拍/选拍清单为示例配置，须由单位依据办案规范确认后在"管理-案件模板"中调整
+  function defaultTemplates() {
+    const T = (id, name, cats) => ({
+      id, name, requiresSeizedItems: true, builtin: true,
+      categories: cats.map((c, ci) => ({
+        name: c[0],
+        items: c[1].map((it, ii) => ({ id: id + '-' + (ci + 1) + '-' + (ii + 1), name: it[0], required: it[1] !== false }))
+      }))
+    });
+    return [
+      T('t-transport', '无证运输', [
+        ['车辆信息', [['车头照片'], ['车尾车牌照片'], ['货厢后备箱照片']]],
+        ['人员证件', [['驾驶证照片'], ['行驶证照片'], ['当事人身份证']]],
+        ['物证与现场', [['当事人指认卷烟照片'], ['外包装及生产批号特写'], ['查获数量清点照片', false]]]
+      ]),
+      T('t-unlicensed', '无证经营', [
+        ['场所信息', [['门头照片'], ['货架存放位置照片'], ['店内全景照片', false]]],
+        ['证照与凭证', [['零售许可证缺失情况说明'], ['进货凭证或无凭证说明', false]]],
+        ['物证与人员', [['涉案卷烟外包装特写'], ['查获数量清点照片'], ['当事人身份证'], ['当事人指认照片']]]
+      ]),
+      T('t-fake', '假烟销售', [
+        ['假烟特征', [['外包装整体照片'], ['防伪标识异常处特写'], ['与正品对比照片', false]]],
+        ['交易证据', [['交易聊天记录截图'], ['转账支付记录截图', false]]],
+        ['人员与现场', [['查获数量清点照片'], ['当事人身份证'], ['当事人指认照片']]]
+      ]),
+      T('t-factory', '制假窝点', [
+        ['现场全貌', [['窝点外观入口照片'], ['生产场地全景照片'], ['生产设备照片']]],
+        ['物证', [['原材料半成品照片'], ['成品假烟包装照片'], ['假冒商标防伪标识特写']]],
+        ['人员与文书', [['现场人员身份证'], ['现场笔录签字页'], ['扣押清单签字确认', false]]]
+      ])
+    ];
+  }
+
+  /* ========================= 状态 ========================= */
+  const state = {
+    ready: false,
+    users: [], templates: [], settings: { watermark: true }, barcodeDict: {}, index: [], prefs: { geo: true },
+    user: null,
+    view: 'loading',
+    caseId: null, caseData: null, caseDirty: false,
+    filters: { q: '', type: '', status: '', assignee: '' },
+    lastRefresh: 0,
+    editTemplate: null,
+    seizedEdit: null,
+    packResult: null,
+    lastPackage: null,
+    pendingCapture: null
+  };
+  const isAdmin = () => !!(state.user && state.user.role === 'admin');
+  function nameOf(id) {
+    if (!id) return '';
+    const u = state.users.find(x => x.id === id);
+    return u ? u.name : '（已删除用户）';
+  }
+  function roleText(r) { return r === 'admin' ? '管理员' : '稽查人员'; }
+
+  /* ========================= 提示 / 弹窗 ========================= */
+  function toast(msg, type, ms) {
+    const el = document.createElement('div');
+    el.className = 'toast ' + (type || '');
+    el.textContent = msg;
+    const box = $('#toast-root');
+    box.appendChild(el);
+    while (box.children.length > 2) box.firstChild.remove(); // 最多同时显示 2 条，避免遮挡页面
+    setTimeout(() => el.remove(), ms || 3200);
+  }
+  function showBusy(msg) { const b = $('#busy'); b.querySelector('.box').textContent = msg || '处理中…'; b.hidden = false; }
+  function hideBusy() { $('#busy').hidden = true; }
+
+  const modal = { kind: null, resolve: null };
+  function showModal(html, kind) {
+    modalRoot.innerHTML = '<div class="modal-mask" data-action="mask"><div class="modal" role="dialog" aria-modal="true">' + html + '</div></div>';
+    modal.kind = kind || 'form';
+    document.body.classList.add('modal-open');
+  }
+  function closeModal(result) {
+    modalRoot.innerHTML = '';
+    document.body.classList.remove('modal-open');
+    const r = modal.resolve;
+    modal.kind = null; modal.resolve = null;
+    if (r) r(result);
+  }
+  function confirmDialog(msg, opts) {
+    opts = opts || {};
+    return new Promise(resolve => {
+      if (modal.resolve) closeModal(false);
+      showModal('<h3>' + esc(opts.title || '请确认') + '</h3><p class="pre">' + esc(msg) + '</p>' +
+        '<div class="btn-row"><button type="button" class="btn" data-action="modal-cancel">' + esc(opts.cancelText || '取消') + '</button>' +
+        '<button type="button" class="btn ' + (opts.danger ? 'btn-danger' : 'btn-primary') + '" data-action="modal-ok">' + esc(opts.okText || '确定') + '</button></div>', 'confirm');
+      modal.resolve = resolve;
+    });
+  }
+  function promptDialog(title, label, value) {
+    return new Promise(resolve => {
+      showModal('<h3>' + esc(title) + '</h3><form data-form="prompt"><label class="field"><span>' + esc(label) + '</span>' +
+        '<input type="text" name="value" maxlength="40" value="' + esc(value || '') + '"></label>' +
+        '<div class="btn-row"><button type="button" class="btn" data-action="modal-cancel">取消</button><button type="submit" class="btn btn-primary">确定</button></div></form>', 'prompt');
+      modal.resolve = resolve;
+      const inp = modalRoot.querySelector('input'); if (inp) inp.focus();
+    });
+  }
+
+  /* ========================= 导航 ========================= */
+  function go(view, params, replace) {
+    Object.assign(state, params || {});
+    state.view = view;
+    state.packResult = null;
+    const hs = { view, caseId: state.caseId };
+    try { replace ? history.replaceState(hs, '') : history.pushState(hs, ''); } catch (e) { /* 忽略 */ }
+    render();
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('popstate', e => {
+    if (modal.kind) { closeModal(false); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
+    if (!state.user) return;
+    const s = e.state || { view: 'cases' };
+    if (s.view === 'case' && s.caseId) { openCase(s.caseId, true); return; }
+    state.view = ['cases', 'admin', 'me'].includes(s.view) ? s.view : 'cases';
+    render();
+  });
+
+  /* ========================= 案件数据 ========================= */
+  function findTemplate(id) { return state.templates.find(t => t.id === id); }
+  function normalizeCase(c) {
+    if (!c) return null;
+    c.evidence = c.evidence || {};
+    c.seizedItems = c.seizedItems || [];
+    c.extras = c.extras || [];
+    c.log = c.log || [];
+    if (!c.template) {
+      const t = findTemplate(c.typeId);
+      c.template = t ? clone(t) : { id: c.typeId, name: c.typeName || '（模板已删除）', requiresSeizedItems: true, categories: [] };
+    }
+    c.typeName = c.typeName || c.template.name;
+    return c;
+  }
+  function hasPhoto(ev) { return !!(ev && (ev.photoId || ev.photo)); }
+  function thumbOf(ev) { return ev ? (ev.thumb || ev.photo || '') : ''; }
+  function seizedItemValid(s) {
+    const q = Number(s && s.qty);
+    return !!(s && String(s.brand || '').trim() && Number.isFinite(q) && q > 0);
+  }
+  function requiredMissing(c) {
+    const out = [];
+    c.template.categories.forEach(cat => cat.items.forEach(it => { if (it.required && !hasPhoto(c.evidence[it.id])) out.push({ cat: cat.name, item: it }); }));
+    return out;
+  }
+  function caseStats(c) {
+    let reqTotal = 0, reqDone = 0, optTotal = 0, optDone = 0;
+    c.template.categories.forEach(cat => cat.items.forEach(it => {
+      const has = hasPhoto(c.evidence[it.id]);
+      if (it.required) { reqTotal++; if (has) reqDone++; } else { optTotal++; if (has) optDone++; }
+    }));
+    const allValid = c.seizedItems.every(seizedItemValid);
+    const seizedOk = allValid && (!c.template.requiresSeizedItems || c.seizedItems.length > 0);
+    return { reqTotal, reqDone, optTotal, optDone, seizedOk, seizedCount: c.seizedItems.length, complete: reqDone === reqTotal && seizedOk };
+  }
+  function indexEntry(c) {
+    const s = caseStats(c);
+    return {
+      id: c.id, number: c.number, typeId: c.typeId, typeName: c.typeName, status: c.status,
+      reqDone: s.reqDone, reqTotal: s.reqTotal, seizedCount: s.seizedCount,
+      createdBy: c.createdBy, assignedTo: c.assignedTo || null, createdAt: c.createdAt, updatedAt: c.updatedAt,
+      lastPackagedAt: c.lastPackagedAt || null, party: c.party || '', address: c.address || '', note: c.note || ''
+    };
+  }
+  async function syncIndexEntry(c, remove) {
+    const idx = await getJSON(K.index, true, []);
+    const i = idx.findIndex(e => e.id === c.id);
+    if (remove) { if (i >= 0) idx.splice(i, 1); } else {
+      const e = indexEntry(c);
+      if (i >= 0) idx[i] = e; else idx.unshift(e);
+    }
+    state.index = idx;
+    return setJSON(K.index, idx, true);
+  }
+  async function saveCase(c, ts) {
+    c.updatedAt = ts || Date.now();
+    c.status = caseStats(c).complete ? 'complete' : 'draft';
+    const ok = await setJSON(caseKey(c.id), c, true);
+    state.caseDirty = !ok;
+    if (ok) await syncIndexEntry(c);
+    return ok;
+  }
+  // 先读取存储中的最新版本再修改，减少多人同时修改时的覆盖
+  async function mutateCase(id, fn, ts) {
+    let latest = null;
+    if (!(state.caseDirty && state.caseData && state.caseData.id === id)) latest = normalizeCase(await getJSON(caseKey(id), true, null));
+    if (!latest) latest = state.caseData && state.caseData.id === id ? state.caseData : null;
+    if (!latest) { toast('案件数据读取失败', 'error'); return null; }
+    const r = await fn(latest);
+    if (r === false) return null;
+    const ok = await saveCase(latest, ts);
+    if (state.caseData && state.caseData.id === id) state.caseData = latest;
+    return ok ? latest : null;
+  }
+  function addLog(c, action, detail) {
+    c.log.push({ at: Date.now(), by: state.user ? state.user.id : '', byName: state.user ? state.user.name : '', action, detail: detail || '' });
+  }
+  function canSeeCase(e, u) {
+    u = u || state.user;
+    if (!u || !e) return false;
+    if (u.role === 'admin') return true;
+    return e.assignedTo === u.id || (!e.assignedTo && e.createdBy === u.id);
+  }
+  function canDeleteCase(e) {
+    if (isAdmin()) return true;
+    return e.createdBy === state.user.id && !e.assignedTo && !e.lastPackagedAt;
+  }
+  function statusOf(e) {
+    if (e.status === 'complete' && e.lastPackagedAt) {
+      return e.updatedAt > e.lastPackagedAt ? { text: '打包后有修改', cls: 'warn' } : { text: '已打包', cls: 'ok' };
+    }
+    if (e.status === 'complete') return { text: '已齐全待打包', cls: 'ok' };
+    return { text: '采集中', cls: 'draft' };
+  }
+  function itemLabel(c, itemId) {
+    for (const cat of c.template.categories) for (const it of cat.items) if (it.id === itemId) return cat.name + ' / ' + it.name;
+    return itemId;
+  }
+
+  /* ========================= 照片处理 ========================= */
+  async function loadImageFromFile(file) {
+    if (window.createImageBitmap) {
+      try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { /* 旧浏览器退回 Image */ }
+    }
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { resolve(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法读取该图片，请换一张或重新拍摄')); };
+      img.src = url;
+    });
+  }
+  function dims(src) { return { w: src.naturalWidth || src.width, h: src.naturalHeight || src.height }; }
+  function scaleToCanvas(src, max) {
+    const { w, h } = dims(src);
+    const r = Math.min(1, max / Math.max(w, h));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * r)); cv.height = Math.max(1, Math.round(h * r));
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(src, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  // 纯函数：对灰度数据计算亮度与清晰度（拉普拉斯方差）
+  function analyzeImageData(data, w, h) {
+    const n = w * h; const g = new Float32Array(n);
+    let sum = 0, dark = 0, bright = 0;
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      const v = 0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2];
+      g[i] = v; sum += v;
+      if (v < 25) dark++; else if (v > 245) bright++;
+    }
+    const mean = sum / n;
+    let lsum = 0, lsq = 0, cnt = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const l = g[i - w] + g[i + w] + g[i - 1] + g[i + 1] - 4 * g[i];
+        lsum += l; lsq += l * l; cnt++;
+      }
+    }
+    const lapVar = cnt ? lsq / cnt - (lsum / cnt) * (lsum / cnt) : 0;
+    const darkClip = dark / n, brightClip = bright / n;
+    const issues = [];
+    if (mean < QUALITY.darkMean || darkClip > QUALITY.darkClip) issues.push('画面偏暗');
+    if (mean > QUALITY.brightMean || brightClip > QUALITY.brightClip) issues.push('画面过曝');
+    if (lapVar < QUALITY.blurVar && !issues.length) issues.push('画面可能模糊');
+    return { mean: Math.round(mean), darkClip: +darkClip.toFixed(3), brightClip: +brightClip.toFixed(3), lapVar: Math.round(lapVar), issues };
+  }
+  function analyzeQuality(src) {
+    try {
+      const cv = scaleToCanvas(src, 480);
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+      return analyzeImageData(d.data, cv.width, cv.height);
+    } catch (e) { return null; }
+  }
+  function drawWatermark(cv, lines) {
+    const ctx = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    const fs = Math.max(14, Math.round(Math.min(w, h) * 0.03));
+    const lh = Math.round(fs * 1.35), padding = Math.round(fs * 0.6);
+    const boxH = lines.length * lh + padding * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, h - boxH, w, boxH);
+    ctx.fillStyle = '#fff';
+    ctx.font = fs + 'px -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
+    ctx.textBaseline = 'top';
+    lines.forEach((t, i) => ctx.fillText(t, padding, h - boxH + padding + i * lh, w - padding * 2));
+  }
+  function dataUrlToBytes(url) { return fromB64(url.slice(url.indexOf(',') + 1)); }
+  function getGeo() {
+    return new Promise(resolve => {
+      if (!state.prefs.geo || !navigator.geolocation) return resolve(null);
+      let done = false;
+      const finish = v => { if (!done) { done = true; clearTimeout(t); resolve(v); } };
+      const t = setTimeout(() => finish(null), GEO_TIMEOUT);
+      try {
+        navigator.geolocation.getCurrentPosition(
+          p => finish({ lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), acc: Math.round(p.coords.accuracy) }),
+          () => finish(null),
+          { enableHighAccuracy: true, timeout: GEO_TIMEOUT, maximumAge: 60000 });
+      } catch (e) { finish(null); }
+    });
+  }
+  // 压缩（长边 1280、JPEG 0.72）+ 水印 + 缩略图 + SHA-256 + 质量检测 + 定位
+  async function processPhoto(file, meta) {
+    const geoP = getGeo();
+    const src = await loadImageFromFile(file);
+    const quality = meta.source === 'camera' ? analyzeQuality(src) : null;
+    const capturedAt = Date.now();
+    const geo = await geoP;
+    const cv = scaleToCanvas(src, PHOTO_MAX);
+    if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
+    if (state.settings.watermark) {
+      const lines = [meta.caseNumber + ' · ' + meta.label, fmtTime(capturedAt) + ' · 采集人：' + state.user.name];
+      if (geo) lines.push('位置：' + fmtGeo(geo));
+      if (meta.source === 'album') lines.push('相册导入');
+      drawWatermark(cv, lines);
+    }
+    const full = cv.toDataURL('image/jpeg', PHOTO_Q);
+    const thumb = scaleToCanvas(cv, THUMB_MAX).toDataURL('image/jpeg', THUMB_Q);
+    const sha256 = hasSubtle() ? await sha256Hex(dataUrlToBytes(full)) : '';
+    return {
+      full, thumb, sha256, capturedAt, geo, quality,
+      source: meta.source, fileTime: file.lastModified || null,
+      bytes: Math.round((full.length - full.indexOf(',') - 1) * 3 / 4)
+    };
+  }
+  function photoRecord(p, photoId) {
+    return { photoId, thumb: p.thumb, capturedAt: p.capturedAt, fileTime: p.fileTime, source: p.source, sha256: p.sha256, geo: p.geo, quality: p.quality, bytes: p.bytes, by: state.user.id, byName: state.user.name };
+  }
+  async function storePhoto(p) {
+    const id = uid();
+    const ok = await setJSON(photoKey(id), p.full, true);
+    return ok ? id : null;
+  }
+  async function loadPhoto(rec) {
+    if (!rec) return null;
+    if (rec.photo) return rec.photo; // 兼容旧版：照片直接存于案件记录
+    if (!rec.photoId) return null;
+    return getJSON(photoKey(rec.photoId), true, null);
+  }
+  function qualityToast(p) {
+    if (p.quality && p.quality.issues.length) toast('建议重拍：' + p.quality.issues.join('、') + '（仅提示，不影响保存）', 'warn', 5000);
+  }
+
+  /* ========================= 条码 ========================= */
+  function barcodeSupported() { return 'BarcodeDetector' in window; }
+  async function tryDetectBarcode(file) {
+    if (!barcodeSupported()) return { error: 'unsupported' };
+    try {
+      let formats = BARCODE_FORMATS;
+      try {
+        if (BarcodeDetector.getSupportedFormats) {
+          const sup = await BarcodeDetector.getSupportedFormats();
+          const f = BARCODE_FORMATS.filter(x => sup.includes(x));
+          if (!f.length) return { error: 'unsupported' };
+          formats = f;
+        }
+      } catch (e) { /* 忽略，按默认格式尝试 */ }
+      const det = new BarcodeDetector({ formats });
+      const src = await loadImageFromFile(file);
+      const res = await det.detect(src);
+      if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
+      if (res && res.length && res[0].rawValue) return { value: String(res[0].rawValue).trim(), format: res[0].format };
+      return { error: 'notfound' };
+    } catch (e) { return { error: 'failed', message: e.message }; }
+  }
+  // GTIN（EAN-8/UPC-A/EAN-13/ITF-14）校验位；非此类条码返回 null
+  function checkGtin(code) {
+    if (!/^\d+$/.test(code) || ![8, 12, 13, 14].includes(code.length)) return null;
+    const d = code.split('').map(Number); const check = d.pop();
+    let sum = 0; d.reverse().forEach((n, i) => { sum += n * (i % 2 === 0 ? 3 : 1); });
+    return (10 - (sum % 10)) % 10 === check;
+  }
+
+  /* ========================= 渲染：框架 ========================= */
+  function topbar(title, back) {
+    return '<header class="topbar">' +
+      (back ? '<button type="button" class="back" data-action="back" data-to="' + esc(back) + '" aria-label="返回">‹ 返回</button>' : '') +
+      '<div class="title">' + esc(title) + '</div>' +
+      (state.user ? '<div class="who">' + esc(state.user.name) + (isAdmin() ? '·管理员' : '') + '</div>' : '') + '</header>';
+  }
+  function tabbar() {
+    const t = (v, label) => '<button type="button" data-action="tab" data-view="' + v + '" class="' + (state.view === v ? 'active' : '') + '">' + label + '</button>';
+    return '<nav class="tabbar">' + t('cases', '案件') + (isAdmin() ? t('admin', '管理') : '') + t('me', '我的') + '</nav>';
+  }
+  function render() {
+    let html = '';
+    switch (state.ready ? state.view : 'loading') {
+      case 'loading': html = topbar('涉烟案件现场证据采集系统') + '<div class="content"><div class="empty">正在加载…</div></div>'; break;
+      case 'setup': html = viewSetup(); break;
+      case 'login': html = viewLogin(); break;
+      case 'cases': html = viewCases(); break;
+      case 'newCase': html = viewNewCase(); break;
+      case 'case': html = viewCase(); break;
+      case 'admin': html = viewAdmin(); break;
+      case 'users': html = viewUsers(); break;
+      case 'templates': html = viewTemplates(); break;
+      case 'templateEdit': html = viewTemplateEdit(); break;
+      case 'barcodes': html = viewBarcodes(); break;
+      case 'backup': html = viewBackup(); break;
+      case 'me': html = viewMe(); break;
+      default: html = viewCases();
+    }
+    root.innerHTML = html;
+    if (state.view === 'cases') renderCaseList();
+  }
+  function storageNotice() {
+    if (Store.backend === 'memory') return '<div class="card alert-danger small"><strong>警告：当前环境无法持久保存数据</strong>，刷新或关闭页面后数据将丢失。请换用最新版 Chrome / Safari 打开，或联系管理员。</div>';
+    if (Store.backend === 'indexeddb') return '<div class="card alert-warn small">当前为<strong>本机存储模式</strong>：数据只保存在本手机的这个浏览器中，其他人看不到；清除浏览器数据会导致丢失，请定期导出备份。</div>';
+    return '';
+  }
+  function wechatNotice() {
+    return /MicroMessenger/i.test(navigator.userAgent) ? '<div class="card alert-warn small">检测到微信内置浏览器：可能无法下载证据包。建议点右上角"…"选择"在浏览器打开"。</div>' : '';
+  }
+
+  /* ========================= 视图：首次设置 / 登录 ========================= */
+  function cryptoMissingCard() {
+    return '<div class="card alert-danger"><strong>当前浏览器不支持安全加密接口（Web Crypto）</strong><p class="small">为保护 PIN，系统拒绝在此环境创建账号或登录。请使用最新版 Chrome / Safari，并通过 HTTPS 网址或本地文件方式打开本系统。</p></div>';
+  }
+  function viewSetup() {
+    const ok = hasSubtle();
+    return topbar('首次使用：设置管理员') + '<div class="content">' + storageNotice() + (ok ? '' : cryptoMissingCard()) +
+      '<form class="card" data-form="setup"><p class="muted small">系统尚无账号。请先设置管理员，管理员可添加稽查人员、维护案件模板、分配案件。</p>' +
+      '<label class="field"><span>管理员姓名</span><input type="text" name="name" maxlength="20" autocomplete="off" required></label>' +
+      '<label class="field"><span>PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
+      '<label class="field"><span>再次输入 PIN</span><input type="password" name="pin2" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
+      '<button type="submit" class="btn btn-primary btn-block"' + (ok ? '' : ' disabled') + '>创建管理员并进入</button></form>' +
+      '<div class="card"><h3>已有备份？</h3><p class="small muted">换手机或换运行环境时，可直接用之前导出的备份文件还原全部数据，还原后用原账号登录。</p>' +
+      '<button type="button" class="btn btn-block" data-action="import">从备份文件还原</button></div></div>';
+  }
+  function viewLogin() {
+    const opts = state.users.map(u => '<option value="' + esc(u.id) + '">' + esc(u.name) + '（' + roleText(u.role) + '）</option>').join('');
+    return topbar('涉烟案件现场证据采集系统') + '<div class="content">' + storageNotice() + (hasSubtle() ? '' : cryptoMissingCard()) +
+      '<form class="card" data-form="login"><h2>登录</h2>' +
+      '<label class="field"><span>选择用户</span><select name="user">' + opts + '</select></label>' +
+      '<label class="field"><span>PIN</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="current-password"></label>' +
+      '<div id="login-msg" class="danger-text small"></div>' +
+      '<button type="submit" class="btn btn-primary btn-block">登录</button></form>' +
+      '<p class="muted small" style="text-align:center">v' + APP_VERSION + ' · 忘记 PIN 请联系管理员重置</p></div>';
+  }
+
+  /* ========================= 视图：案件列表 ========================= */
+  function visibleCases() {
+    const f = state.filters; const q = f.q.trim().toLowerCase();
+    return state.index.filter(e => canSeeCase(e)).filter(e => {
+      if (f.type && e.typeId !== f.type) return false;
+      if (f.status) {
+        const st = statusOf(e).text;
+        if (f.status === 'draft' && e.status !== 'draft') return false;
+        if (f.status === 'complete' && !(e.status === 'complete' && !e.lastPackagedAt)) return false;
+        if (f.status === 'packaged' && st !== '已打包') return false;
+        if (f.status === 'dirty' && st !== '打包后有修改') return false;
+      }
+      if (f.assignee) {
+        if (f.assignee === '__none' ? !!e.assignedTo : e.assignedTo !== f.assignee) return false;
+      }
+      if (q) {
+        const hay = [e.number, e.typeName, e.party, e.address, e.note, nameOf(e.assignedTo), nameOf(e.createdBy)].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+  function viewCases() {
+    const f = state.filters;
+    const typeIds = {}; state.index.forEach(e => { typeIds[e.typeId] = e.typeName; }); state.templates.forEach(t => { typeIds[t.id] = t.name; });
+    const typeOpts = Object.keys(typeIds).map(id => '<option value="' + esc(id) + '"' + (f.type === id ? ' selected' : '') + '>' + esc(typeIds[id]) + '</option>').join('');
+    const st = [['', '全部状态'], ['draft', '采集中'], ['complete', '已齐全待打包'], ['packaged', '已打包'], ['dirty', '打包后有修改']]
+      .map(s => '<option value="' + s[0] + '"' + (f.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>').join('');
+    const asg = isAdmin() ? '<select data-filter="assignee" aria-label="承办人"><option value="">全部承办人</option><option value="__none"' + (f.assignee === '__none' ? ' selected' : '') + '>未分配</option>' +
+      state.users.map(u => '<option value="' + esc(u.id) + '"' + (f.assignee === u.id ? ' selected' : '') + '>' + esc(u.name) + '</option>').join('') + '</select>' : '';
+    return topbar('案件列表') + '<div class="content">' + storageNotice() + wechatNotice() + backupReminder() +
+      '<div class="row" style="margin-bottom:10px"><button type="button" class="btn btn-primary grow" data-action="new-case">＋ 新建案件</button>' +
+      '<button type="button" class="btn" data-action="refresh">刷新</button></div>' +
+      '<div class="filters" style="margin-bottom:6px"><input class="full" type="search" data-filter="q" placeholder="搜索编号 / 当事人 / 地址 / 承办人" value="' + esc(f.q) + '">' +
+      '<select data-filter="type" aria-label="案件类型"><option value="">全部类型</option>' + typeOpts + '</select>' +
+      '<select data-filter="status" aria-label="状态">' + st + '</select>' + (asg ? '<div class="full">' + asg + '</div>' : '') + '</div>' +
+      '<div class="muted small" id="refresh-info" style="margin-bottom:8px"></div>' +
+      '<div id="case-list"></div></div>' + tabbar();
+  }
+  function backupReminder() {
+    if (!isAdmin()) return '';
+    const last = state.settings.lastExportAt;
+    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+    if (days !== null && days < 7) return '';
+    if (!state.index.length) return '';
+    return '<div class="card alert-warn small">' + (last ? '距上次导出备份已 ' + days + ' 天。' : '尚未导出过数据备份。') +
+      '<button type="button" class="btn btn-sm" data-action="goto" data-view="backup" style="margin-left:6px">去备份</button></div>';
+  }
+  function caseCardHtml(e) {
+    const st = statusOf(e);
+    const pct = e.reqTotal ? Math.round(e.reqDone / e.reqTotal * 100) : 100;
+    return '<div class="card case-card" data-action="open-case" data-id="' + esc(e.id) + '">' +
+      '<div class="row between nowrap"><strong class="case-no grow">' + esc(e.number) + '</strong><span class="badge ' + st.cls + '">' + st.text + '</span></div>' +
+      '<div class="muted small">' + esc(e.typeName) + ' · 创建：' + esc(nameOf(e.createdBy)) + ' · ' + fmtDate(e.createdAt) + '</div>' +
+      '<div class="progress' + (pct === 100 ? ' done' : '') + '"><div class="bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="row between small"><span>必拍 ' + e.reqDone + '/' + e.reqTotal + ' · 查获 ' + e.seizedCount + ' 条</span>' +
+      '<span>承办：' + (e.assignedTo ? esc(nameOf(e.assignedTo)) : '<span class="warn-text">未分配</span>') + '</span></div>' +
+      (isAdmin() ? '<div class="row" style="margin-top:8px"><button type="button" class="btn btn-sm" data-action="assign-case" data-id="' + esc(e.id) + '">' + (e.assignedTo ? '重新分配' : '分配承办人') + '</button></div>' : '') +
+      '</div>';
+  }
+  function renderCaseList() {
+    const box = $('#case-list'); if (!box) return;
+    const list = visibleCases();
+    const total = state.index.filter(e => canSeeCase(e)).length;
+    box.innerHTML = list.length ? list.map(caseCardHtml).join('') :
+      '<div class="empty">' + (total ? '没有符合筛选条件的案件' : (isAdmin() ? '暂无案件。点"新建案件"开始。' : '暂无分配给你的案件。可点"新建案件"开始现场取证。')) + '</div>';
+    const info = $('#refresh-info');
+    if (info) info.dataset.ts = state.lastRefresh;
+    if (info) info.textContent = '共 ' + list.length + ' 个案件' + (list.length !== total ? '（全部 ' + total + '）' : '') + (state.lastRefresh ? ' · 更新于 ' + fmtTime(state.lastRefresh).slice(11) : '') + ' · 每 30 秒自动刷新';
+  }
+  async function refreshList(silent) {
+    state.index = await getJSON(K.index, true, state.index);
+    state.users = await getJSON(K.users, true, state.users);
+    state.templates = await getJSON(K.templates, true, state.templates);
+    state.settings = Object.assign({ watermark: true }, await getJSON(K.settings, true, state.settings));
+    state.lastRefresh = Date.now();
+    const me = state.users.find(u => u.id === state.user.id);
+    if (!me) { toast('当前账号已被删除，请重新登录', 'error'); logout(); return; }
+    state.user = me;
+    if (state.view === 'cases') renderCaseList();
+    if (!silent) toast('已刷新', 'ok', 1500);
+  }
+
+  /* ========================= 视图：新建案件 ========================= */
+  function viewNewCase() {
+    const types = state.templates.map((t, i) => '<label><input type="radio" name="typeId" value="' + esc(t.id) + '"' + (i === 0 ? ' checked' : '') + '>' + esc(t.name) + '</label>').join('');
+    return topbar('新建案件', 'cases') + '<div class="content"><form class="card" data-form="newCase">' +
+      '<label class="field"><span>案件编号 *</span><div class="row nowrap"><input type="text" name="number" maxlength="40" class="grow" placeholder="如：X烟立〔2026〕12号" required>' +
+      '<button type="button" class="btn btn-sm" data-action="gen-number">临时编号</button></div></label>' +
+      '<div class="field"><span class="muted small">案件类型 *（决定必拍清单）</span><div class="type-choice">' + types + '</div></div>' +
+      '<label class="field"><span>现场地址</span><input type="text" name="address" maxlength="80"></label>' +
+      '<label class="field"><span>当事人</span><input type="text" name="party" maxlength="40"></label>' +
+      '<label class="field"><span>备注</span><textarea name="note" maxlength="500"></textarea></label>' +
+      '<p class="muted small">新建后案件暂不指定承办人，由管理员另行分配；未分配前仅创建人本人和管理员可见。</p>' +
+      '<button type="submit" class="btn btn-primary btn-block">创建并开始取证</button></form></div>';
+  }
+
+  /* ========================= 视图：案件详情 ========================= */
+  function viewCase() {
+    const c = state.caseData;
+    if (!c) return topbar('案件', 'cases') + '<div class="content"><div class="empty">正在读取案件…</div></div>';
+    const s = caseStats(c); const e = indexEntry(c); const st = statusOf(e);
+    const pct = s.reqTotal ? Math.round(s.reqDone / s.reqTotal * 100) : 100;
+    let html = topbar(c.number, 'cases') + '<div class="content">' + wechatNotice();
+    html += '<div class="card"><div class="row between nowrap"><h2 class="grow break">' + esc(c.number) + '</h2><span class="badge ' + st.cls + '">' + st.text + '</span></div>' +
+      '<div class="kv"><div>案件类型</div><div>' + esc(c.typeName) + '</div>' +
+      '<div>承办人</div><div>' + (c.assignedTo ? esc(nameOf(c.assignedTo)) : '<span class="warn-text">未分配</span>') + '</div>' +
+      '<div>创建人</div><div>' + esc(c.createdByName || nameOf(c.createdBy)) + ' · ' + fmtDate(c.createdAt) + '</div>' +
+      (c.address ? '<div>现场地址</div><div>' + esc(c.address) + '</div>' : '') +
+      (c.party ? '<div>当事人</div><div>' + esc(c.party) + '</div>' : '') +
+      (c.note ? '<div>备注</div><div class="pre">' + esc(c.note) + '</div>' : '') +
+      (c.lastPackagedAt ? '<div>最近打包</div><div>' + fmtTime(c.lastPackagedAt) + '</div>' : '') + '</div>' +
+      '<div class="progress' + (pct === 100 ? ' done' : '') + '"><div class="bar" style="width:' + pct + '%"></div></div>' +
+      '<div class="small" id="case-progress">必拍 ' + s.reqDone + '/' + s.reqTotal + ' · 选拍 ' + s.optDone + '/' + s.optTotal + ' · 查获卷烟 ' + s.seizedCount + ' 条</div>' +
+      '<div class="btn-row"><button type="button" class="btn btn-sm" data-action="edit-info">编辑信息</button>' +
+      (isAdmin() ? '<button type="button" class="btn btn-sm" data-action="assign-case" data-id="' + esc(c.id) + '">' + (c.assignedTo ? '重新分配' : '分配承办人') + '</button>' : '') +
+      '<button type="button" class="btn btn-sm" data-action="reload-case">刷新</button></div></div>';
+    if (st.text === '打包后有修改') html += '<div class="card alert-warn small">证据包生成后本案又有修改，请重新生成证据包。</div>';
+    html += packResultHtml();
+    c.template.categories.forEach(cat => {
+      html += '<div class="section-title"><h2>' + esc(cat.name) + '</h2></div><div class="tiles">' + cat.items.map(it => itemTileHtml(c, it)).join('') + '</div>';
+    });
+    html += seizedSectionHtml(c);
+    html += extrasSectionHtml(c);
+    html += '<div class="card" style="margin-top:16px"><details><summary>操作日志（' + c.log.length + ' 条）</summary>' +
+      c.log.slice().reverse().map(l => '<div class="log-line">' + fmtTime(l.at) + ' · ' + esc(l.byName) + ' · ' + esc(l.action) + (l.detail ? '：' + esc(l.detail) : '') + '</div>').join('') + '</details></div>';
+    if (canDeleteCase(c)) html += '<button type="button" class="btn btn-danger-outline btn-block" data-action="delete-case">删除本案件</button>';
+    html += '</div><div class="actionbar"><div class="inner"><button type="button" class="btn btn-primary" data-action="package">校验并生成证据包</button></div></div>';
+    return html;
+  }
+  function itemTileHtml(c, it) {
+    const ev = c.evidence[it.id]; const has = hasPhoto(ev);
+    const issues = has && ev.quality && ev.quality.issues && ev.quality.issues.length ? ev.quality.issues : null;
+    return '<div class="tile ' + (has ? 'done' : (it.required ? 'missing' : '')) + '" id="item-' + esc(it.id) + '" data-item-id="' + esc(it.id) + '">' +
+      '<div class="thumb">' + (has ? '<img src="' + thumbOf(ev) + '" alt="' + esc(it.name) + '" data-action="view-photo" data-kind="evidence" data-item="' + esc(it.id) + '">' : '<span class="ph">未拍</span>') + '</div>' +
+      '<div class="tile-name">' + esc(it.name) + ' <span class="badge ' + (it.required ? 'req' : 'opt') + '">' + (it.required ? '必拍' : '选拍') + '</span></div>' +
+      (issues ? '<div class="warn-text small">⚠ ' + esc(issues.join('、')) + '，建议重拍</div>' : '') +
+      (has ? '<div class="muted small">' + fmtTime(ev.capturedAt).slice(5) + (ev.geo ? ' · 已定位' : '') + '</div>' : '') +
+      '<div class="tile-actions"><button type="button" class="btn btn-sm btn-primary" data-action="capture" data-src="camera" data-kind="evidence" data-item="' + esc(it.id) + '">' + (has ? '重拍' : '拍照') + '</button>' +
+      '<button type="button" class="btn btn-sm" data-action="capture" data-src="album" data-kind="evidence" data-item="' + esc(it.id) + '">相册</button></div></div>';
+  }
+  function seizedSummary(items) {
+    const sum = {};
+    items.filter(seizedItemValid).forEach(s => { sum[s.unit || '条'] = (sum[s.unit || '条'] || 0) + Number(s.qty); });
+    return Object.keys(sum).map(u => (Math.round(sum[u] * 100) / 100) + ' ' + u).join('，');
+  }
+  function seizedSectionHtml(c) {
+    const req = c.template.requiresSeizedItems;
+    let html = '<div class="section-title"><h2>查获卷烟' + (req ? ' <span class="badge req">必填</span>' : '') + '</h2>' +
+      '<button type="button" class="btn btn-sm btn-primary" data-action="seized-add">＋ 登记</button></div><div class="card" id="seized-list">';
+    if (!c.seizedItems.length) {
+      html += '<div class="muted small">' + (req ? '本类案件须登记查获卷烟的品规和数量，未登记无法生成证据包。' : '如有查获卷烟请登记。') + '</div>';
+    } else {
+      html += c.seizedItems.map((s, i) => {
+        const valid = seizedItemValid(s);
+        return '<div class="list-item' + (valid ? '' : ' invalid') + '">' +
+          '<div class="mini">' + (s.thumb ? '<img src="' + s.thumb + '" alt="" data-action="view-photo" data-kind="seized" data-item="' + esc(s.id) + '">' : '') + '</div>' +
+          '<div class="grow"><div><strong>' + (i + 1) + '. ' + (s.brand ? esc(s.brand) : '<span class="danger-text">品规未填</span>') + '</strong> ' +
+          (Number(s.qty) > 0 ? esc(s.qty) + ' ' + esc(s.unit || '条') : '<span class="danger-text">数量未填</span>') + '</div>' +
+          '<div class="muted small break">条码：' + (s.barcode ? esc(s.barcode) : '—') + '</div>' +
+          (valid ? '' : '<div class="danger-text small">信息不完整，打包前需补全</div>') + '</div>' +
+          '<div class="row"><button type="button" class="btn btn-sm" data-action="seized-edit" data-id="' + esc(s.id) + '">编辑</button>' +
+          '<button type="button" class="btn btn-sm btn-danger-outline" data-action="seized-del" data-id="' + esc(s.id) + '">删除</button></div></div>';
+      }).join('');
+      html += '<div class="small" style="margin-top:8px">合计：' + (seizedSummary(c.seizedItems) || '—') + '</div>';
+    }
+    return html + '</div>';
+  }
+  function extrasSectionHtml(c) {
+    let html = '<div class="section-title"><h2>补充照片 <span class="badge opt">可选</span></h2><div class="row">' +
+      '<button type="button" class="btn btn-sm" data-action="capture" data-src="camera" data-kind="extra">拍照</button>' +
+      '<button type="button" class="btn btn-sm" data-action="capture" data-src="album" data-kind="extra">相册</button></div></div>';
+    if (!c.extras.length) return html + '<div class="card muted small">清单以外需要补充的现场照片可在此添加，会一并打入证据包。</div>';
+    return html + '<div class="card">' + c.extras.map((x, i) => '<div class="list-item"><div class="mini"><img src="' + x.thumb + '" alt="" data-action="view-photo" data-kind="extra" data-item="' + esc(x.id) + '"></div>' +
+      '<div class="grow"><div>' + (i + 1) + '. ' + esc(x.caption || '补充照片') + '</div><div class="muted small">' + fmtTime(x.capturedAt) + '</div></div></div>').join('') + '</div>';
+  }
+  function packResultHtml() {
+    const r = state.packResult;
+    if (!r) return '';
+    if (r.ok) {
+      const canShare = state.lastPackage && navigator.canShare && (() => { try { return navigator.canShare({ files: [state.lastPackage.file] }); } catch (e) { return false; } })();
+      return '<div class="card alert-ok" id="pack-result"><strong>证据包已生成</strong><div class="small break">' + esc(r.filename) + '（' + fmtSize(r.size) + '，照片 ' + r.photos + ' 张）</div>' +
+        (r.optionalMissing ? '<div class="small warn-text">提示：有 ' + r.optionalMissing + ' 个选拍项未拍（不影响打包）。</div>' : '') +
+        '<div class="btn-row"><button type="button" class="btn btn-sm" data-action="download-again">再次下载</button>' +
+        (canShare ? '<button type="button" class="btn btn-sm btn-primary" data-action="share-package">发送/分享</button>' : '') + '</div></div>';
+    }
+    return '<div class="card alert-danger" id="pack-result"><strong>' + esc(r.title) + '</strong>' +
+      (r.items && r.items.length ? '<ul class="small" style="padding-left:20px;margin:6px 0">' + r.items.map(x => '<li>' + (x.itemId ? '<a href="#" data-action="goto-item" data-item="' + esc(x.itemId) + '">' + esc(x.text) + '</a>' : esc(x.text)) + '</li>').join('') + '</ul>' : '') +
+      (r.detail ? '<div class="small">' + esc(r.detail) + '</div>' : '') + '</div>';
+  }
+
+  /* ========================= 视图：管理 ========================= */
+  function viewAdmin() {
+    if (!isAdmin()) return viewCases();
+    const m = (view, title, desc) => '<button type="button" class="menu-item" data-action="goto" data-view="' + view + '"><span>' + title + '<span class="desc">' + desc + '</span></span><span>›</span></button>';
+    return topbar('管理') + '<div class="content">' +
+      m('users', '用户管理', '添加稽查人员、重置 PIN、调整角色（共 ' + state.users.length + ' 人）') +
+      m('templates', '案件模板', '维护各类案件的必拍 / 选拍清单（共 ' + state.templates.length + ' 类）') +
+      m('barcodes', '条码库', '条码与品规对照，扫码后自动带出品规（' + Object.keys(state.barcodeDict).length + ' 条）') +
+      m('backup', '数据备份与还原', '导出 / 导入全部数据，重建案件索引') +
+      '<div class="card"><h3>系统设置</h3><label class="check"><input type="checkbox" data-setting="watermark"' + (state.settings.watermark ? ' checked' : '') + '>照片加水印（案件编号、项目、时间、采集人、位置）</label>' +
+      '<p class="muted small">水印直接绘制在照片上；关闭后新拍照片不加水印，已拍照片不变。</p></div></div>' + tabbar();
+  }
+  function viewUsers() {
+    const list = state.users.map(u => '<div class="list-item"><div class="grow"><div><strong>' + esc(u.name) + '</strong> <span class="badge ' + (u.role === 'admin' ? 'admin' : '') + '">' + roleText(u.role) + '</span>' +
+      (u.id === state.user.id ? ' <span class="badge ok">当前</span>' : '') + '</div><div class="muted small">创建于 ' + fmtDate(u.createdAt) + '</div></div>' +
+      '<div class="row"><button type="button" class="btn btn-sm" data-action="user-reset" data-id="' + esc(u.id) + '">重置PIN</button>' +
+      '<button type="button" class="btn btn-sm" data-action="user-role" data-id="' + esc(u.id) + '">设为' + (u.role === 'admin' ? '稽查人员' : '管理员') + '</button>' +
+      '<button type="button" class="btn btn-sm btn-danger-outline" data-action="user-del" data-id="' + esc(u.id) + '">删除</button></div></div>').join('');
+    return topbar('用户管理', 'admin') + '<div class="content"><div class="card">' + list + '</div>' +
+      '<form class="card" data-form="addUser"><h3>添加用户</h3>' +
+      '<label class="field"><span>姓名</span><input type="text" name="name" maxlength="20" required></label>' +
+      '<label class="field"><span>角色</span><select name="role"><option value="inspector">稽查人员</option><option value="admin">管理员</option></select></label>' +
+      '<label class="field"><span>初始 PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
+      '<button type="submit" class="btn btn-primary btn-block"' + (hasSubtle() ? '' : ' disabled') + '>添加</button></form></div>';
+  }
+  function viewTemplates() {
+    const list = state.templates.map(t => {
+      let req = 0, opt = 0; t.categories.forEach(c => c.items.forEach(i => i.required ? req++ : opt++));
+      return '<div class="list-item"><div class="grow"><strong>' + esc(t.name) + '</strong><div class="muted small">' + t.categories.length + ' 个类别 · 必拍 ' + req + ' 项 · 选拍 ' + opt + ' 项' + (t.requiresSeizedItems ? ' · 须登记查获卷烟' : '') + '</div></div>' +
+        '<div class="row"><button type="button" class="btn btn-sm" data-action="tpl-edit" data-id="' + esc(t.id) + '">编辑</button>' +
+        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="tpl-del" data-id="' + esc(t.id) + '">删除</button></div></div>';
+    }).join('');
+    return topbar('案件模板', 'admin') + '<div class="content"><div class="card alert-warn small">默认模板中的必拍清单为<strong>示例配置</strong>，请按本单位办案规范核对后修改。模板修改只影响之后新建的案件，已建案件保持创建时的清单。</div>' +
+      '<div class="card">' + list + '</div><div class="btn-row"><button type="button" class="btn btn-primary" data-action="tpl-new">＋ 新建模板</button>' +
+      '<button type="button" class="btn" data-action="tpl-restore">恢复缺失的默认模板</button></div></div>';
+  }
+  function viewTemplateEdit() {
+    const t = state.editTemplate;
+    if (!t) return viewTemplates();
+    const cats = t.categories.map((cat, ci) => '<div class="tpl-cat"><div class="row nowrap" style="margin-bottom:8px"><input type="text" class="grow" data-tpl="cat" data-ci="' + ci + '" value="' + esc(cat.name) + '" placeholder="类别名称">' +
+      '<button type="button" class="btn btn-sm btn-danger-outline" data-action="tpl-del-cat" data-ci="' + ci + '">删类别</button></div>' +
+      cat.items.map((it, ii) => '<div class="tpl-item"><input type="text" data-tpl="item" data-ci="' + ci + '" data-ii="' + ii + '" value="' + esc(it.name) + '" placeholder="拍摄项目">' +
+        '<label class="check"><input type="checkbox" data-tpl="req" data-ci="' + ci + '" data-ii="' + ii + '"' + (it.required ? ' checked' : '') + '>必拍</label>' +
+        '<button type="button" class="btn btn-sm" data-action="tpl-up" data-ci="' + ci + '" data-ii="' + ii + '" aria-label="上移">↑</button>' +
+        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="tpl-del-item" data-ci="' + ci + '" data-ii="' + ii + '" aria-label="删除">✕</button></div>').join('') +
+      '<button type="button" class="btn btn-sm" data-action="tpl-add-item" data-ci="' + ci + '">＋ 拍摄项目</button></div>').join('');
+    return topbar(t.isNew ? '新建模板' : '编辑模板', 'templates') + '<div class="content"><div class="card">' +
+      '<label class="field"><span>案件类型名称</span><input type="text" data-tpl="name" maxlength="20" value="' + esc(t.name) + '"></label>' +
+      '<label class="check"><input type="checkbox" data-tpl="seized"' + (t.requiresSeizedItems ? ' checked' : '') + '>本类案件须登记查获卷烟（品规+数量）</label></div>' +
+      cats + '<button type="button" class="btn btn-block" data-action="tpl-add-cat">＋ 添加类别</button>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="back" data-to="templates">取消</button><button type="button" class="btn btn-primary" data-action="tpl-save">保存模板</button></div></div>';
+  }
+  function viewBarcodes() {
+    const codes = Object.keys(state.barcodeDict).sort();
+    return topbar('条码库', 'admin') + '<div class="content"><div class="card small muted">登记查获卷烟时，填写了条码和品规的记录会自动加入条码库；下次扫到同一条码会自动带出品规。条码与品规的对应请以实物和官方信息为准。</div>' +
+      '<form class="card" data-form="addBarcode"><h3>手工添加</h3><label class="field"><span>条码</span><input type="text" name="code" inputmode="numeric" maxlength="40" required></label>' +
+      '<label class="field"><span>品规</span><input type="text" name="brand" maxlength="40" required></label><button type="submit" class="btn btn-primary btn-block">保存</button></form>' +
+      '<div class="card">' + (codes.length ? codes.map(code => '<div class="list-item"><div class="grow"><div class="mono break">' + esc(code) + '</div><div>' + esc(state.barcodeDict[code]) + '</div></div>' +
+        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="barcode-del" data-code="' + esc(code) + '">删除</button></div>').join('') : '<div class="muted small">暂无记录</div>') + '</div></div>';
+  }
+  function viewBackup() {
+    return topbar('数据备份与还原', 'admin') + '<div class="content">' + storageNotice() +
+      '<div class="card"><h3>导出全部数据</h3><p class="small">导出模板、用户、条码库和全部案件（含照片）为一个 JSON 文件。' + (state.settings.lastExportAt ? '上次导出：' + fmtTime(state.settings.lastExportAt) : '尚未导出过。') + '</p>' +
+      '<p class="small danger-text">导出文件包含全部案件照片和账号 PIN 摘要，请妥善保管，不要通过公共渠道传播。</p>' +
+      '<button type="button" class="btn btn-primary btn-block" data-action="export">导出备份文件</button></div>' +
+      '<div class="card"><h3>从备份还原</h3><p class="small">选择之前导出的备份文件。<strong>还原会覆盖当前全部数据。</strong></p>' +
+      '<button type="button" class="btn btn-block" data-action="import">选择备份文件并还原</button></div>' +
+      '<div class="card"><h3>重建案件索引</h3><p class="small">如果案件列表缺少案件（例如多人同时操作导致列表不同步），可从案件数据重新生成列表。</p>' +
+      '<button type="button" class="btn btn-block" data-action="rebuild-index">重建案件索引</button></div></div>';
+  }
+
+  /* ========================= 视图：我的 / 关于 ========================= */
+  function viewMe() {
+    const backendText = { host: '宿主共享存储（同一链接下多人共享）', indexeddb: '本机浏览器存储（仅本设备可见）', memory: '内存（刷新即丢失）' }[Store.backend];
+    return topbar('我的') + '<div class="content"><div class="card"><div class="row between"><div><strong>' + esc(state.user.name) + '</strong> <span class="badge ' + (isAdmin() ? 'admin' : '') + '">' + roleText(state.user.role) + '</span></div>' +
+      '<button type="button" class="btn btn-sm" data-action="logout">退出登录</button></div></div>' +
+      '<div class="card"><h3>拍照设置</h3><label class="check"><input type="checkbox" data-pref="geo"' + (state.prefs.geo ? ' checked' : '') + '>拍照时记录位置（需允许浏览器定位；拒绝不影响拍照）</label></div>' +
+      '<form class="card" data-form="changePin"><h3>修改我的 PIN</h3>' +
+      '<label class="field"><span>原 PIN</span><input type="password" name="old" inputmode="numeric" maxlength="6" autocomplete="current-password"></label>' +
+      '<label class="field"><span>新 PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>' +
+      '<label class="field"><span>再次输入新 PIN</span><input type="password" name="pin2" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>' +
+      '<button type="submit" class="btn btn-primary btn-block">保存新 PIN</button></form>' +
+      '<div class="card" id="about"><h3>关于本系统</h3><div class="kv"><div>版本</div><div>v' + APP_VERSION + '</div><div>存储方式</div><div>' + backendText + '</div>' +
+      '<div>条码识别</div><div>' + (barcodeSupported() ? '当前浏览器支持自动识别' : '当前浏览器不支持自动识别，请手工输入') + '</div><div>存储占用</div><div id="quota">—</div></div>' +
+      '<h3 style="margin-top:12px">使用限制（请知悉）</h3><ol class="small" style="padding-left:20px;margin:0">' +
+      '<li>角色权限为<strong>界面层控制</strong>：数据保存在共享存储中，不是服务器级访问控制，不能防止有技术能力的人直接读取数据。</li>' +
+      '<li><strong>无实时同步</strong>：他人新建或修改的数据需刷新后可见（案件列表每 30 秒自动刷新，也可手动刷新）；两人同时修改同一案件时，后保存的可能覆盖先保存的。</li>' +
+      '<li>"必拍项缺失拦截"只保证<strong>不会漏拍</strong>，不能证明<strong>拍得对、拍得清</strong>，照片内容仍需人工审核。拍照质量提示（偏暗/过曝/模糊）只是参考，可能误报或漏报。</li>' +
+      '<li>条码识别依赖浏览器的 BarcodeDetector 功能（部分安卓 Chrome 支持，iPhone 一般不支持），不支持时请手工输入条码。</li>' +
+      '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
+      '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li></ol></div></div>' + tabbar();
+  }
+
+  /* ========================= 弹窗：查获卷烟 ========================= */
+  function renderSeizedModal() {
+    const s = state.seizedEdit;
+    const chk = s.barcode ? checkGtin(s.barcode) : null;
+    const brands = [...new Set(Object.values(state.barcodeDict))].sort();
+    showModal('<h3>' + (s.id ? '编辑' : '登记') + '查获卷烟</h3><form data-form="seized">' +
+      '<label class="field"><span>条码（可扫码或手工输入）</span><div class="row nowrap"><input type="text" name="barcode" class="grow" inputmode="numeric" maxlength="40" value="' + esc(s.barcode) + '" placeholder="商品条码">' +
+      '<button type="button" class="btn btn-sm btn-primary" data-action="scan-barcode">扫码</button></div></label>' +
+      '<div id="barcode-msg" class="small ' + (chk === false ? 'warn-text' : 'muted') + '" style="margin:-6px 0 10px">' + (chk === false ? '条码校验位不符，请核对是否输错' : (s.barcodeMsg ? esc(s.barcodeMsg) : '')) + '</div>' +
+      '<label class="field"><span>品规 *</span><input type="text" name="brand" maxlength="40" list="brand-list" value="' + esc(s.brand) + '" placeholder="如：某品牌（硬）"><datalist id="brand-list">' + brands.map(b => '<option value="' + esc(b) + '">').join('') + '</datalist></label>' +
+      '<div class="row nowrap"><label class="field grow"><span>数量 *</span><input type="number" name="qty" inputmode="decimal" min="0" step="any" value="' + esc(s.qty) + '"></label>' +
+      '<label class="field" style="width:96px"><span>单位</span><select name="unit">' + UNITS.map(u => '<option' + (s.unit === u ? ' selected' : '') + '>' + u + '</option>').join('') + '</select></label></div>' +
+      '<div class="field"><span class="muted small">照片（可选）</span><div class="row nowrap">' +
+      '<div class="mini" style="width:96px;height:72px;border-radius:6px;overflow:hidden;background:#eef1ef">' + (s.thumb ? '<img src="' + s.thumb + '" alt="" style="width:100%;height:100%;object-fit:cover">' : '') + '</div>' +
+      '<button type="button" class="btn btn-sm" data-action="capture" data-src="camera" data-kind="seizedPhoto">拍照</button>' +
+      '<button type="button" class="btn btn-sm" data-action="capture" data-src="album" data-kind="seizedPhoto">相册</button></div></div>' +
+      '<div id="seized-msg" class="danger-text small"></div>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">保存</button></div></form>', 'seized');
+  }
+  function syncSeizedForm() {
+    const f = modalRoot.querySelector('form[data-form="seized"]');
+    if (!f || !state.seizedEdit) return;
+    state.seizedEdit.barcode = f.barcode.value.trim();
+    state.seizedEdit.brand = f.brand.value.trim();
+    state.seizedEdit.qty = f.qty.value;
+    state.seizedEdit.unit = f.unit.value;
+  }
+
+  /* ========================= 业务动作 ========================= */
+  async function openCase(id, fromPop) {
+    const e = state.index.find(x => x.id === id);
+    if (e && !canSeeCase(e)) { toast('无权查看该案件', 'error'); return; }
+    state.caseId = id; state.caseData = null; state.caseDirty = false; state.lastPackage = null;
+    if (fromPop) { state.view = 'case'; state.packResult = null; render(); } else go('case', { caseId: id });
+    const c = normalizeCase(await getJSON(caseKey(id), true, null));
+    if (!c) { toast('案件数据读取失败或已被删除', 'error'); go('cases', {}, true); return; }
+    if (!canSeeCase(c)) { toast('无权查看该案件', 'error'); go('cases', {}, true); return; }
+    if (state.caseId !== id) return;
+    state.caseData = c;
+    render();
+  }
+  async function reassignCase(caseId, userId) {
+    if (!isAdmin()) { toast('只有管理员可以分配案件', 'error'); return false; }
+    const target = userId ? state.users.find(u => u.id === userId) : null;
+    const c = await mutateCase(caseId, cc => {
+      const from = cc.assignedTo ? nameOf(cc.assignedTo) : '未分配';
+      cc.assignedTo = target ? target.id : null;
+      addLog(cc, '分配承办人', from + ' → ' + (target ? target.name : '未分配'));
+    });
+    if (c) toast(target ? '已分配给 ' + target.name : '已取消分配', 'ok');
+    return !!c;
+  }
+  function showAssignModal(caseId) {
+    const e = state.index.find(x => x.id === caseId) || (state.caseData && state.caseData.id === caseId ? indexEntry(state.caseData) : null);
+    if (!e) return;
+    const opts = '<option value="">（不分配）</option>' + state.users.map(u => '<option value="' + esc(u.id) + '"' + (e.assignedTo === u.id ? ' selected' : '') + '>' + esc(u.name) + '（' + roleText(u.role) + '）</option>').join('');
+    showModal('<h3>分配承办人</h3><p class="small">案件：' + esc(e.number) + '<br>当前承办人：' + (e.assignedTo ? esc(nameOf(e.assignedTo)) : '未分配') + '</p>' +
+      '<form data-form="assign" data-id="' + esc(caseId) + '"><label class="field"><span>承办人</span><select name="user">' + opts + '</select></label>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">确定</button></div></form>', 'assign');
+  }
+  function showInfoModal() {
+    const c = state.caseData;
+    showModal('<h3>编辑案件信息</h3><form data-form="caseInfo">' +
+      '<label class="field"><span>案件编号 *</span><input type="text" name="number" maxlength="40" value="' + esc(c.number) + '"></label>' +
+      '<label class="field"><span>现场地址</span><input type="text" name="address" maxlength="80" value="' + esc(c.address || '') + '"></label>' +
+      '<label class="field"><span>当事人</span><input type="text" name="party" maxlength="40" value="' + esc(c.party || '') + '"></label>' +
+      '<label class="field"><span>备注</span><textarea name="note" maxlength="500">' + esc(c.note || '') + '</textarea></label>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">保存</button></div></form>', 'info');
+  }
+  function numberTaken(number, exceptId) {
+    const n = number.trim();
+    return state.index.some(e => e.id !== exceptId && String(e.number).trim() === n);
+  }
+
+  async function handleCapturedFile(file, ctx) {
+    const c = state.caseData;
+    if (ctx.kind === 'barcode') return handleBarcodeFile(file);
+    if (!c) return;
+    let label = '补充照片';
+    if (ctx.kind === 'evidence') label = itemLabel(c, ctx.itemId).split(' / ')[1];
+    if (ctx.kind === 'seizedPhoto') label = '查获卷烟';
+    showBusy('正在处理照片…');
+    let p;
+    try { p = await processPhoto(file, { caseNumber: c.number, label, source: ctx.source }); } finally { hideBusy(); }
+
+    if (ctx.kind === 'seizedPhoto') {
+      state.seizedEdit.newPhoto = p; state.seizedEdit.thumb = p.thumb;
+      renderSeizedModal(); qualityToast(p); return;
+    }
+    if (ctx.kind === 'extra') {
+      const caption = await promptDialog('补充照片说明', '这张照片拍的是什么？', '补充照片');
+      if (caption === false || caption == null) { toast('已取消，照片未保存'); return; }
+      const photoId = await storePhoto(p); if (!photoId) return;
+      const rec = Object.assign(photoRecord(p, photoId), { id: uid(), caption: caption.trim() || '补充照片' });
+      await mutateCase(c.id, cc => { cc.extras.push(rec); addLog(cc, '添加补充照片', rec.caption); });
+      render(); qualityToast(p); return;
+    }
+    // 必拍/选拍项
+    const old = c.evidence[ctx.itemId];
+    if (hasPhoto(old)) {
+      const useNew = await compareDialog(thumbOf(old), p.thumb);
+      if (!useNew) { toast('已保留原照片'); return; }
+    }
+    const photoId = await storePhoto(p); if (!photoId) return;
+    let replaced = null;
+    const saved = await mutateCase(c.id, cc => {
+      replaced = cc.evidence[ctx.itemId] || null;
+      cc.evidence[ctx.itemId] = photoRecord(p, photoId);
+      addLog(cc, replaced ? '替换照片' : '拍摄照片', itemLabel(cc, ctx.itemId) + (replaced && replaced.sha256 ? '（原照片 SHA-256 前 12 位：' + replaced.sha256.slice(0, 12) + '）' : ''));
+    });
+    if (saved && replaced && replaced.photoId) Store.del(photoKey(replaced.photoId), true);
+    render();
+    if (saved) { qualityToast(p); if (!(p.quality && p.quality.issues.length)) toast('已保存：' + label, 'ok', 1500); }
+  }
+  function compareDialog(oldThumb, newThumb) {
+    return new Promise(resolve => {
+      showModal('<h3>替换照片？</h3><div class="compare"><figure><img src="' + oldThumb + '" alt=""><figcaption>原照片</figcaption></figure>' +
+        '<figure><img src="' + newThumb + '" alt=""><figcaption>新照片</figcaption></figure></div>' +
+        '<p class="small muted">确认前原照片不会被删除。</p><div class="btn-row"><button type="button" class="btn" data-action="modal-cancel">保留原照片</button>' +
+        '<button type="button" class="btn btn-primary" data-action="modal-ok">使用新照片</button></div>', 'confirm');
+      modal.resolve = resolve;
+    });
+  }
+  async function handleBarcodeFile(file) {
+    showBusy('正在识别条码…');
+    let r; try { r = await tryDetectBarcode(file); } finally { hideBusy(); }
+    const s = state.seizedEdit; if (!s) return;
+    if (r.value) {
+      s.barcode = r.value;
+      const known = state.barcodeDict[r.value];
+      if (known && !s.brand) s.brand = known;
+      s.barcodeMsg = '已识别条码' + (known ? '，已从条码库带出品规' : '，条码库中暂无该条码，请填写品规');
+      // 扫码用的照片顺便作为该品规的照片，省去再拍一次
+      if (!s.thumb && state.caseData) {
+        showBusy('正在保存照片…');
+        try {
+          const p = await processPhoto(file, { caseNumber: state.caseData.number, label: '查获卷烟 ' + r.value, source: 'camera' });
+          s.newPhoto = p; s.thumb = p.thumb;
+          s.barcodeMsg += '；扫码照片已作为该品规照片';
+        } catch (e) { /* 照片处理失败不影响条码 */ } finally { hideBusy(); }
+      }
+    } else {
+      s.barcodeMsg = r.error === 'notfound' ? '未识别到条码，请对准条码重拍或手工输入' : '条码识别失败，请手工输入';
+    }
+    renderSeizedModal();
+    if (!r.value) toast(s.barcodeMsg, 'warn');
+  }
+  async function saveSeized() {
+    syncSeizedForm();
+    const s = state.seizedEdit; const c = state.caseData;
+    const msg = modalRoot.querySelector('#seized-msg');
+    if (!s.brand && !s.qty && !s.barcode) { msg.textContent = '请至少填写条码、品规或数量'; return; }
+    let photo = null;
+    if (s.newPhoto) {
+      const photoId = await storePhoto(s.newPhoto); if (!photoId) return;
+      photo = photoRecord(s.newPhoto, photoId);
+    }
+    const item = { id: s.id || uid(), brand: s.brand, qty: s.qty === '' ? '' : Number(s.qty), unit: s.unit || '条', barcode: s.barcode };
+    let oldPhotoId = null;
+    const saved = await mutateCase(c.id, cc => {
+      const i = cc.seizedItems.findIndex(x => x.id === item.id);
+      const prev = i >= 0 ? cc.seizedItems[i] : {};
+      const merged = Object.assign({}, prev, item);
+      if (photo) { oldPhotoId = prev.photoId || null; Object.assign(merged, { photoId: photo.photoId, thumb: photo.thumb, capturedAt: photo.capturedAt, sha256: photo.sha256, geo: photo.geo, source: photo.source }); }
+      if (i >= 0) cc.seizedItems[i] = merged; else cc.seizedItems.push(merged);
+      addLog(cc, i >= 0 ? '修改查获卷烟' : '登记查获卷烟', (item.brand || '品规未填') + ' ' + (item.qty || '?') + item.unit + (item.barcode ? '，条码 ' + item.barcode : ''));
+    });
+    if (!saved) return;
+    if (oldPhotoId) Store.del(photoKey(oldPhotoId), true);
+    if (s.barcode && s.brand && state.barcodeDict[s.barcode] !== s.brand && !state.barcodeDict[s.barcode]) {
+      const dict = await getJSON(K.barcodes, true, {}) || {};
+      dict[s.barcode] = s.brand; state.barcodeDict = dict;
+      await setJSON(K.barcodes, dict, true);
+    }
+    closeModal(); state.seizedEdit = null;
+    render();
+    toast(seizedItemValid(item) ? '已保存查获卷烟' : '已保存，但信息不完整，打包前需补全', seizedItemValid(item) ? 'ok' : 'warn');
+  }
+
+  async function showPhotoViewer(kind, id) {
+    const c = state.caseData; let rec, title;
+    if (kind === 'evidence') { rec = c.evidence[id]; title = itemLabel(c, id); }
+    if (kind === 'seized') { rec = c.seizedItems.find(x => x.id === id); title = '查获卷烟：' + (rec && rec.brand || ''); }
+    if (kind === 'extra') { rec = c.extras.find(x => x.id === id); title = '补充照片：' + (rec && rec.caption || ''); }
+    if (!rec) return;
+    const q = rec.quality;
+    const info = '<div class="kv" style="margin-top:8px"><div>拍摄时间</div><div>' + fmtTime(rec.capturedAt) + '</div>' +
+      '<div>入口</div><div>' + (rec.source === 'album' ? '相册导入' : '拍照') + (rec.byName ? ' · ' + esc(rec.byName) : '') + '</div>' +
+      '<div>位置</div><div>' + (rec.geo ? fmtGeo(rec.geo) : '未记录') + '</div>' +
+      (q ? '<div>质量</div><div>' + (q.issues.length ? '<span class="warn-text">' + esc(q.issues.join('、')) + '</span>' : '未发现明显问题') + '<span class="muted small">（亮度 ' + q.mean + '，清晰度 ' + q.lapVar + '）</span></div>' : '') +
+      '<div>SHA-256</div><div class="mono break">' + esc(rec.sha256 || '—') + '</div></div>';
+    const actions = kind === 'evidence' ?
+      '<button type="button" class="btn" data-action="capture" data-src="camera" data-kind="evidence" data-item="' + esc(id) + '">重拍</button>' +
+      '<button type="button" class="btn" data-action="capture" data-src="album" data-kind="evidence" data-item="' + esc(id) + '">相册替换</button>' +
+      '<button type="button" class="btn btn-danger-outline" data-action="photo-del" data-kind="evidence" data-item="' + esc(id) + '">删除</button>' :
+      (kind === 'extra' ? '<button type="button" class="btn btn-danger-outline" data-action="photo-del" data-kind="extra" data-item="' + esc(id) + '">删除</button>' : '');
+    showModal('<h3 class="break">' + esc(title) + '</h3><img class="viewer-img" id="viewer-img" src="' + thumbOf(rec) + '" alt="">' + info +
+      '<div class="btn-row">' + actions + '<button type="button" class="btn btn-primary" data-action="modal-close">关闭</button></div>', 'viewer');
+    const full = await loadPhoto(rec);
+    const img = modalRoot.querySelector('#viewer-img');
+    if (img && full) img.src = full;
+    else if (img && !full) toast('原图读取失败，仅显示缩略图', 'warn');
+  }
+  async function deletePhoto(kind, id) {
+    const c = state.caseData;
+    const label = kind === 'evidence' ? itemLabel(c, id) : '补充照片';
+    if (!(await confirmDialog('确定删除"' + label + '"的照片吗？删除后需重新拍摄。', { danger: true, okText: '删除' }))) return;
+    let removed = null;
+    const saved = await mutateCase(c.id, cc => {
+      if (kind === 'evidence') { removed = cc.evidence[id]; delete cc.evidence[id]; }
+      else { const i = cc.extras.findIndex(x => x.id === id); if (i >= 0) removed = cc.extras.splice(i, 1)[0]; }
+      if (!removed) return false;
+      addLog(cc, '删除照片', label + (removed.sha256 ? '（SHA-256 前 12 位：' + removed.sha256.slice(0, 12) + '）' : ''));
+    });
+    if (saved && removed && removed.photoId) Store.del(photoKey(removed.photoId), true);
+    render();
+    if (saved) toast('已删除');
+  }
+  async function deleteCase() {
+    const c = state.caseData;
+    if (!canDeleteCase(c)) { toast('无权删除该案件', 'error'); return; }
+    const n = Object.keys(c.evidence).length + c.seizedItems.length + c.extras.length;
+    if (!(await confirmDialog('确定删除案件"' + c.number + '"吗？\n该案件的 ' + n + ' 条照片/登记记录将一并删除，且无法恢复。', { danger: true, okText: '删除案件', title: '删除案件' }))) return;
+    showBusy('正在删除…');
+    try {
+      const ids = [];
+      Object.values(c.evidence).forEach(e => e.photoId && ids.push(e.photoId));
+      c.seizedItems.forEach(s => s.photoId && ids.push(s.photoId));
+      c.extras.forEach(x => x.photoId && ids.push(x.photoId));
+      for (const id of ids) await Store.del(photoKey(id), true);
+      await Store.del(caseKey(c.id), true);
+      await syncIndexEntry(c, true);
+    } finally { hideBusy(); }
+    toast('已删除案件', 'ok');
+    state.caseData = null;
+    go('cases', {}, true);
+  }
+
+  /* ========================= 生成证据包 ========================= */
+  // 顺序不可变：1 校验必拍 → 2 校验查获卷烟 → 3 检查 JSZip → 4 生成 ZIP
+  async function generatePackage() {
+    const c = state.caseData; if (!c) return false;
+    const block = r => { state.packResult = Object.assign({ ok: false }, r); render(); const el = $('#pack-result'); if (el) el.scrollIntoView({ block: 'center' }); return false; };
+    // 1. 必拍照片
+    const missing = requiredMissing(c);
+    if (missing.length) {
+      return block({ title: '必拍照片未拍齐（缺 ' + missing.length + ' 项），无法生成证据包', items: missing.map(m => ({ text: m.cat + ' / ' + m.item.name, itemId: m.item.id })), detail: '点击缺项可跳转到对应位置。' });
+    }
+    // 2. 查获卷烟
+    if (c.template.requiresSeizedItems && !c.seizedItems.length) {
+      return block({ title: '未登记查获卷烟，无法生成证据包', detail: '本类案件须登记查获卷烟的品规和数量（可扫码或手工输入条码）。' });
+    }
+    const bad = c.seizedItems.map((s, i) => ({ s, i })).filter(x => !seizedItemValid(x.s));
+    if (bad.length) {
+      return block({ title: '查获卷烟信息不完整，无法生成证据包', items: bad.map(x => ({ text: '第 ' + (x.i + 1) + ' 条：' + (!String(x.s.brand || '').trim() ? '品规未填' : '') + (!(Number(x.s.qty) > 0) ? (String(x.s.brand || '').trim() ? '' : '，') + '数量须大于 0' : '') })) });
+    }
+    // 3. JSZip
+    if (typeof JSZip === 'undefined') {
+      return block({ title: '打包组件（JSZip）未加载，无法生成证据包', detail: '请重新打开完整的系统文件后重试；如仍失败请联系管理员。已采集的照片不受影响。' });
+    }
+    if (!hasSubtle()) return block({ title: '当前浏览器不支持 SHA-256 计算，无法生成核对信息', detail: '请使用最新版 Chrome / Safari 打开。' });
+    // 4. 生成 ZIP
+    showBusy('正在生成证据包…');
+    try {
+      const ts = Date.now();
+      const num = safeName(c.number);
+      const zip = new JSZip();
+      const used = {};
+      const uniq = name => { let n = name, k = 2; while (used[n]) { n = name.replace(/\.jpg$/, '_' + (k++) + '.jpg'); } used[n] = true; return n; };
+      const files = [];
+      const addPhoto = async (rec, fname, meta) => {
+        const url = await loadPhoto(rec);
+        if (!url) throw new Error('照片数据读取失败：' + meta.label + '。请重拍该项后再打包。');
+        const bytes = dataUrlToBytes(url);
+        const hash = await sha256Hex(bytes);
+        const name = uniq(fname);
+        zip.file(name, bytes, { binary: true, date: new Date(rec.capturedAt || ts) });
+        files.push(Object.assign({ name, hash, rec, size: bytes.length }, meta));
+      };
+      for (const cat of c.template.categories) {
+        for (const it of cat.items) {
+          const ev = c.evidence[it.id];
+          if (hasPhoto(ev)) await addPhoto(ev, num + '_' + safeName(cat.name) + '_' + safeName(it.name) + '.jpg', { group: 'evidence', label: cat.name + ' / ' + it.name, required: it.required });
+        }
+      }
+      for (let i = 0; i < c.seizedItems.length; i++) {
+        const s = c.seizedItems[i];
+        if (s.photoId) await addPhoto(s, num + '_查获卷烟_' + (i + 1) + '_' + safeName(s.brand) + '.jpg', { group: 'seized', label: '查获卷烟 ' + (i + 1) + '：' + s.brand, seizedIndex: i });
+      }
+      for (let i = 0; i < c.extras.length; i++) {
+        const x = c.extras[i];
+        await addPhoto(x, num + '_补充照片_' + (i + 1) + '_' + safeName(x.caption) + '.jpg', { group: 'extra', label: '补充照片 ' + (i + 1) + '：' + x.caption });
+      }
+      const logEntry = { at: ts, by: state.user.id, byName: state.user.name, action: '生成证据包', detail: '照片 ' + files.length + ' 张' };
+      const manifest = buildManifest(c, files, ts, logEntry);
+      zip.file('证据清单说明.txt', '﻿' + manifest.replace(/\n/g, '\r\n'), { date: new Date(ts) });
+      zip.file('SHA256SUMS.txt', files.map(f => f.hash + '  ' + f.name).join('\n') + '\n', { date: new Date(ts) });
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE', mimeType: 'application/zip' });
+      const filename = num + '_证据包_' + stamp(ts) + '.zip';
+      const file = (typeof File === 'function') ? new File([blob], filename, { type: 'application/zip' }) : blob;
+      state.lastPackage = { blob, filename, file };
+      const optionalMissing = caseStats(c).optTotal - caseStats(c).optDone;
+      await mutateCase(c.id, cc => { cc.lastPackagedAt = ts; cc.log.push(logEntry); }, ts);
+      state.packResult = { ok: true, filename, size: blob.size, photos: files.length, optionalMissing };
+      hideBusy();
+      downloadBlob(blob, filename);
+      render();
+      const el = $('#pack-result'); if (el) el.scrollIntoView({ block: 'center' });
+      return true;
+    } catch (e) {
+      hideBusy();
+      return block({ title: '生成证据包失败', detail: e.message || String(e) });
+    } finally { hideBusy(); }
+  }
+  function buildManifest(c, files, ts, logEntry) {
+    const L = [];
+    const line = (k, v) => L.push(k + '：' + (v == null || v === '' ? '—' : v));
+    L.push('涉烟案件现场证据清单说明', '==============================');
+    line('系统', '涉烟案件现场证据采集系统 v' + APP_VERSION);
+    line('案件编号', c.number);
+    line('案件类型', c.typeName);
+    line('现场地址', c.address);
+    line('当事人', c.party);
+    line('备注', c.note);
+    line('采集人（案件创建人）', c.createdByName || nameOf(c.createdBy));
+    const takers = [...new Set(files.map(f => f.rec.byName).filter(Boolean))];
+    line('照片拍摄人', takers.join('、'));
+    line('承办人', c.assignedTo ? nameOf(c.assignedTo) : '未分配');
+    line('案件创建时间', fmtTime(c.createdAt));
+    line('证据包生成时间', fmtTime(ts) + '（' + tzLabel() + '）');
+    line('证据包生成人', state.user.name);
+    L.push('');
+    const s = caseStats(c);
+    L.push('一、清单照片（必拍 ' + s.reqDone + '/' + s.reqTotal + '，选拍 ' + s.optDone + '/' + s.optTotal + '）');
+    const photoLines = f => {
+      L.push('    文件：' + f.name);
+      L.push('    拍摄时间：' + fmtTime(f.rec.capturedAt) + '（' + tzLabel() + '）　入口：' + (f.rec.source === 'album' ? '相册导入' : '拍照') + (f.rec.byName ? '　拍摄人：' + f.rec.byName : ''));
+      if (f.rec.source === 'album' && f.rec.fileTime) L.push('    原文件修改时间：' + fmtTime(f.rec.fileTime));
+      L.push('    位置：' + (f.rec.geo ? fmtGeo(f.rec.geo) + '，WGS-84' : '未记录'));
+      if (f.rec.quality && f.rec.quality.issues.length) L.push('    拍照质量提示：' + f.rec.quality.issues.join('、'));
+      L.push('    SHA-256：' + f.hash);
+    };
+    let n = 0;
+    files.filter(f => f.group === 'evidence').forEach(f => { L.push('[' + (++n) + '] ' + f.label + '（' + (f.required ? '必拍' : '选拍') + '）'); photoLines(f); });
+    const optMissing = [];
+    c.template.categories.forEach(cat => cat.items.forEach(it => { if (!it.required && !hasPhoto(c.evidence[it.id])) optMissing.push(cat.name + ' / ' + it.name); }));
+    if (optMissing.length) L.push('未拍的选拍项：' + optMissing.join('；'));
+    L.push('');
+    L.push('二、查获卷烟（' + c.seizedItems.length + ' 条）');
+    c.seizedItems.forEach((it, i) => {
+      L.push('[' + (i + 1) + '] 品规：' + it.brand + '　数量：' + it.qty + ' ' + (it.unit || '条') + '　条码：' + (it.barcode || '—'));
+      const f = files.find(x => x.group === 'seized' && x.seizedIndex === i);
+      if (f) photoLines(f);
+    });
+    if (c.seizedItems.length) L.push('合计：' + seizedSummary(c.seizedItems));
+    L.push('');
+    const ex = files.filter(f => f.group === 'extra');
+    L.push('三、补充照片（' + ex.length + ' 张）');
+    ex.forEach((f, i) => { L.push('[' + (i + 1) + '] ' + f.label); photoLines(f); });
+    L.push('');
+    L.push('四、操作日志');
+    c.log.concat([logEntry]).forEach(l => L.push(fmtTime(l.at) + '　' + l.byName + '　' + l.action + (l.detail ? '：' + l.detail : '')));
+    L.push('');
+    L.push('五、核对说明');
+    L.push('1. 每张照片的 SHA-256 摘要见上文及 SHA256SUMS.txt。收到证据包后，可在电脑上核对照片在证据包生成后是否被改动：');
+    L.push('   Linux / macOS：在解压目录执行 sha256sum -c SHA256SUMS.txt（macOS 可用 shasum -a 256 -c SHA256SUMS.txt）；');
+    L.push('   Windows：certutil -hashfile 文件名 SHA256，与上文摘要比对。');
+    L.push('2. 摘要只能说明"证据包生成后文件是否被改动"，不能证明照片拍摄内容的真实性，也不是防篡改措施。');
+    L.push('3. 拍摄时间取自采集手机的系统时间；位置取自浏览器定位（如有），精度见括号内数值。');
+    L.push('4. 照片经系统压缩（长边不超过 ' + PHOTO_MAX + ' 像素）' + (state.settings.watermark ? '，并可能叠加了案件编号、时间、采集人等水印' : '') + '。');
+    return L.join('\n') + '\n';
+  }
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+  }
+
+  /* ========================= 备份导出 / 导入 ========================= */
+  async function allCaseIds() {
+    const ids = new Set(state.index.map(e => e.id));
+    const keys = await Store.keys('case:', true);
+    if (keys) keys.forEach(k => ids.add(k.slice(5)));
+    return [...ids];
+  }
+  async function exportData() {
+    const ok = await confirmDialog('导出文件包含全部案件照片和账号 PIN 摘要。\n请妥善保管，不要通过公共渠道传播或发送给无关人员。', { title: '导出备份', okText: '我知道了，导出' });
+    if (!ok) return;
+    showBusy('正在导出…');
+    try {
+      const cases = []; const photos = {};
+      for (const id of await allCaseIds()) {
+        const c = await getJSON(caseKey(id), true, null); if (!c) continue;
+        const recs = Object.values(c.evidence || {}).concat(c.seizedItems || [], c.extras || []);
+        for (const r of recs) if (r && r.photoId && !photos[r.photoId]) { const p = await getJSON(photoKey(r.photoId), true, null); if (p) photos[r.photoId] = p; }
+        cases.push(c);
+      }
+      const ts = Date.now();
+      const data = {
+        format: 'tobacco-evidence-backup', formatVersion: 1, appVersion: APP_VERSION, exportedAt: ts, exportedBy: state.user.name,
+        templates: await getJSON(K.templates, true, state.templates), users: await getJSON(K.users, true, state.users),
+        settings: Object.assign({}, state.settings, { lastExportAt: ts }), barcodeDict: await getJSON(K.barcodes, true, {}),
+        index: await getJSON(K.index, true, []), cases, photos
+      };
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      downloadBlob(blob, '证据采集系统备份_' + stamp(ts) + '.json');
+      state.settings.lastExportAt = ts;
+      await setJSON(K.settings, state.settings, true);
+      toast('已导出：' + cases.length + ' 个案件，' + Object.keys(photos).length + ' 张照片（' + fmtSize(blob.size) + '）', 'ok', 5000);
+    } finally { hideBusy(); }
+  }
+  async function importData(file) {
+    let data;
+    try { data = JSON.parse(await file.text()); } catch (e) { toast('无法读取该文件，请确认是本系统导出的备份文件', 'error'); return; }
+    if (!data || data.format !== 'tobacco-evidence-backup' || !Array.isArray(data.users) || !Array.isArray(data.cases)) { toast('文件格式不正确，不是本系统的备份文件', 'error'); return; }
+    if (!data.users.some(u => u.role === 'admin')) { toast('备份中没有管理员账号，无法还原', 'error'); return; }
+    const ok = await confirmDialog('将从备份还原（导出时间 ' + fmtTime(data.exportedAt) + '）：\n' + data.cases.length + ' 个案件、' + Object.keys(data.photos || {}).length + ' 张照片、' + data.users.length + ' 个用户。\n\n当前系统中的全部数据将被覆盖，且无法撤销。', { title: '从备份还原', danger: true, okText: '覆盖并还原' });
+    if (!ok) return;
+    showBusy('正在还原…');
+    let fail = 0;
+    try {
+      // 删除现有案件及照片
+      for (const id of await allCaseIds()) {
+        const c = await getJSON(caseKey(id), true, null);
+        if (c) {
+          const recs = Object.values(c.evidence || {}).concat(c.seizedItems || [], c.extras || []);
+          for (const r of recs) if (r && r.photoId) await Store.del(photoKey(r.photoId), true);
+        }
+        await Store.del(caseKey(id), true);
+      }
+      const photos = data.photos || {};
+      for (const pid of Object.keys(photos)) if (!(await Store.set(photoKey(pid), JSON.stringify(photos[pid]), true))) fail++;
+      const idx = [];
+      for (const c0 of data.cases) {
+        const c = normalizeCase(c0);
+        if (!(await Store.set(caseKey(c.id), JSON.stringify(c), true))) fail++;
+        idx.push(indexEntry(c));
+      }
+      idx.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const w = [[K.index, idx], [K.users, data.users], [K.templates, Array.isArray(data.templates) && data.templates.length ? data.templates : defaultTemplates()],
+        [K.settings, Object.assign({ watermark: true }, data.settings || {})], [K.barcodes, data.barcodeDict || {}]];
+      for (const [k, v] of w) if (!(await Store.set(k, JSON.stringify(v), true))) fail++;
+    } finally { hideBusy(); }
+    if (fail) reportSaveFail('case:');
+    await loadShared();
+    if (!state.user) { toast(fail ? '还原完成，但有 ' + fail + ' 项写入失败' : '还原完成：' + data.cases.length + ' 个案件，请用原账号登录', fail ? 'error' : 'ok', 5000); go('login', {}, true); return; }
+    const me = state.users.find(u => u.id === state.user.id);
+    toast(fail ? '还原完成，但有 ' + fail + ' 项写入失败' : '还原完成：' + data.cases.length + ' 个案件', fail ? 'error' : 'ok', 5000);
+    if (!me) { toast('当前账号不在备份中，请重新登录'); logout(); return; }
+    state.user = me;
+    go('cases', {}, true);
+  }
+  async function rebuildIndex() {
+    const keys = await Store.keys('case:', true);
+    if (!keys) { toast('当前存储方式不支持列出数据，无法重建', 'error'); return; }
+    showBusy('正在重建…');
+    const idx = [];
+    try {
+      for (const k of keys) { const c = normalizeCase(await getJSON(k, true, null)); if (c && c.id) idx.push(indexEntry(c)); }
+      idx.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    } finally { hideBusy(); }
+    if (await setJSON(K.index, idx, true)) { state.index = idx; toast('已重建：共 ' + idx.length + ' 个案件', 'ok'); }
+  }
+
+  /* ========================= 账号动作 ========================= */
+  async function saveUsers(users) {
+    const ok = await setJSON(K.users, users, true);
+    if (ok) state.users = users;
+    return ok;
+  }
+  function logout() {
+    state.user = null; state.caseData = null;
+    Store.del(K.session, false);
+    go('login', {}, true);
+  }
+  async function afterLogin(user) {
+    state.user = user;
+    await setJSON(K.session, { userId: user.id, at: Date.now() }, false);
+    state.prefs = Object.assign({ geo: true }, await getJSON(K.prefs, false, {}));
+    state.lastRefresh = Date.now();
+    go('cases', {}, true);
+  }
+
+  /* ========================= 事件：表单提交 ========================= */
+  async function handleSubmit(name, f) {
+    switch (name) {
+      case 'setup': {
+        const n = f.name.value.trim(), pin = f.pin.value, pin2 = f.pin2.value;
+        if (!hasSubtle()) { toast('当前浏览器不支持 Web Crypto，拒绝创建账号', 'error'); return; }
+        if (!n) { toast('请填写姓名', 'error'); return; }
+        if (!PIN_RE.test(pin)) { toast('PIN 须为 4–6 位数字', 'error'); return; }
+        if (pin !== pin2) { toast('两次输入的 PIN 不一致', 'error'); return; }
+        const existing = await getJSON(K.users, true, []);
+        if (existing && existing.length) { toast('系统已有账号，请登录', 'warn'); state.users = existing; go('login', {}, true); return; }
+        const u = { id: uid(), name: n, role: 'admin', pinHash: await makePinHash(pin), createdAt: Date.now() };
+        if (await saveUsers([u])) await afterLogin(u);
+        return;
+      }
+      case 'login': {
+        const id = f.user.value, pin = f.pin.value;
+        const msg = $('#login-msg');
+        state.users = await getJSON(K.users, true, state.users);
+        const u = state.users.find(x => x.id === id);
+        if (!u) { msg.textContent = '用户不存在'; return; }
+        const fs = loginFails[id] || (loginFails[id] = { count: 0, until: 0 });
+        if (fs.until > Date.now()) { msg.textContent = '连续输错次数过多，请 ' + Math.ceil((fs.until - Date.now()) / 1000) + ' 秒后再试'; return; }
+        const r = await verifyPin(u, pin);
+        if (r.error === 'nocrypto') { msg.textContent = '当前浏览器不支持 Web Crypto，无法验证 PIN，请使用最新版浏览器'; return; }
+        if (!r.ok) {
+          fs.count++;
+          if (fs.count >= LOCK_MAX) { fs.count = 0; fs.until = Date.now() + LOCK_MS; msg.textContent = '连续输错 ' + LOCK_MAX + ' 次，已锁定 ' + (LOCK_MS / 1000) + ' 秒'; }
+          else msg.textContent = 'PIN 错误，还可尝试 ' + (LOCK_MAX - fs.count) + ' 次';
+          f.pin.value = '';
+          return;
+        }
+        delete loginFails[id];
+        if (r.upgrade) {
+          const users = await getJSON(K.users, true, state.users);
+          const uu = users.find(x => x.id === id);
+          if (uu) { uu.pinHash = await makePinHash(pin); await saveUsers(users); }
+        }
+        await afterLogin(state.users.find(x => x.id === id) || u);
+        return;
+      }
+      case 'newCase': {
+        const number = f.number.value.trim();
+        const typeEl = f.querySelector('input[name=typeId]:checked');
+        if (!number) { toast('请填写案件编号', 'error'); return; }
+        if (!typeEl) { toast('请选择案件类型', 'error'); return; }
+        state.index = await getJSON(K.index, true, state.index);
+        if (numberTaken(number)) { toast('案件编号已存在，请核对', 'error'); return; }
+        const t = findTemplate(typeEl.value);
+        const now = Date.now();
+        const c = {
+          id: uid(), number, typeId: t.id, typeName: t.name, template: clone(t),
+          address: f.address.value.trim(), party: f.party.value.trim(), note: f.note.value.trim(),
+          createdAt: now, updatedAt: now, status: 'draft', evidence: {}, seizedItems: [], extras: [], lastPackagedAt: null,
+          createdBy: state.user.id, createdByName: state.user.name, assignedTo: null, log: []
+        };
+        addLog(c, '创建案件', t.name);
+        if (!(await saveCase(c, now))) return;
+        state.caseData = c; state.caseId = c.id;
+        history.replaceState({ view: 'cases' }, '');
+        go('case', { caseId: c.id });
+        toast('案件已创建，请按清单逐项拍照', 'ok');
+        return;
+      }
+      case 'caseInfo': {
+        const number = f.number.value.trim();
+        if (!number) { toast('案件编号不能为空', 'error'); return; }
+        state.index = await getJSON(K.index, true, state.index);
+        if (numberTaken(number, state.caseData.id)) { toast('案件编号已存在，请核对', 'error'); return; }
+        const vals = { number, address: f.address.value.trim(), party: f.party.value.trim(), note: f.note.value.trim() };
+        await mutateCase(state.caseData.id, cc => {
+          const changed = Object.keys(vals).filter(k => (cc[k] || '') !== vals[k]);
+          if (!changed.length) return false;
+          Object.assign(cc, vals);
+          addLog(cc, '修改案件信息', changed.map(k => ({ number: '编号', address: '地址', party: '当事人', note: '备注' }[k])).join('、'));
+        });
+        closeModal(); render();
+        return;
+      }
+      case 'assign': {
+        const caseId = f.dataset.id; const userId = f.user.value || null;
+        const e = state.index.find(x => x.id === caseId) || indexEntry(state.caseData);
+        if ((e.assignedTo || null) === userId) { closeModal(); return; }
+        if (e.assignedTo) {
+          closeModal();
+          const ok = await confirmDialog('案件"' + e.number + '"当前由 ' + nameOf(e.assignedTo) + ' 承办。\n确定改为：' + (userId ? nameOf(userId) : '不分配') + '？', { title: '重新分配', danger: true, okText: '确定重新分配' });
+          if (!ok) return;
+        } else closeModal();
+        await reassignCase(caseId, userId);
+        if (state.view === 'cases') await refreshList(true); else render();
+        return;
+      }
+      case 'seized': await saveSeized(); return;
+      case 'prompt': { const v = f.value.value; closeModal(v); return; }
+      case 'addUser': {
+        const n = f.name.value.trim(), role = f.role.value, pin = f.pin.value;
+        if (!hasSubtle()) { toast('当前浏览器不支持 Web Crypto，拒绝创建账号', 'error'); return; }
+        if (!n) { toast('请填写姓名', 'error'); return; }
+        if (!PIN_RE.test(pin)) { toast('PIN 须为 4–6 位数字', 'error'); return; }
+        const users = await getJSON(K.users, true, state.users);
+        if (users.some(u => u.name === n)) { toast('已有同名用户', 'error'); return; }
+        users.push({ id: uid(), name: n, role: role === 'admin' ? 'admin' : 'inspector', pinHash: await makePinHash(pin), createdAt: Date.now() });
+        if (await saveUsers(users)) { toast('已添加：' + n, 'ok'); render(); }
+        return;
+      }
+      case 'resetPin': {
+        const pin = f.pin.value;
+        if (!PIN_RE.test(pin)) { toast('PIN 须为 4–6 位数字', 'error'); return; }
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === f.dataset.id); if (!u) return;
+        u.pinHash = await makePinHash(pin);
+        if (await saveUsers(users)) { closeModal(); toast('已重置 ' + u.name + ' 的 PIN', 'ok'); }
+        return;
+      }
+      case 'changePin': {
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === state.user.id);
+        if (!u) return;
+        const r = await verifyPin(u, f.old.value);
+        if (!r.ok) { toast('原 PIN 不正确', 'error'); return; }
+        if (!PIN_RE.test(f.pin.value)) { toast('新 PIN 须为 4–6 位数字', 'error'); return; }
+        if (f.pin.value !== f.pin2.value) { toast('两次输入的新 PIN 不一致', 'error'); return; }
+        u.pinHash = await makePinHash(f.pin.value);
+        if (await saveUsers(users)) { state.user = u; f.reset(); toast('PIN 已修改', 'ok'); }
+        return;
+      }
+      case 'addBarcode': {
+        const code = f.code.value.trim(), brand = f.brand.value.trim();
+        if (!code || !brand) return;
+        const dict = await getJSON(K.barcodes, true, {}) || {};
+        dict[code] = brand;
+        if (await setJSON(K.barcodes, dict, true)) { state.barcodeDict = dict; toast('已保存', 'ok'); render(); }
+        return;
+      }
+    }
+  }
+
+  /* ========================= 事件：点击 ========================= */
+  async function handleAction(action, el, ev) {
+    switch (action) {
+      case 'mask': if (ev.target === el && ['viewer', 'confirm', 'prompt'].includes(modal.kind)) closeModal(false); return; // 表单弹窗点空白处不关闭，防止误触丢失已填内容
+      case 'modal-ok': closeModal(true); return;
+      case 'modal-cancel': closeModal(false); return;
+      case 'modal-close': closeModal(); state.seizedEdit = null; return;
+      case 'tab': go(el.dataset.view); if (el.dataset.view === 'cases') refreshList(true); return;
+      case 'goto': go(el.dataset.view); return;
+      case 'back': {
+        const to = el.dataset.to || 'cases';
+        if (state.view === 'templateEdit') state.editTemplate = null;
+        go(to, {}, false);
+        if (to === 'cases') refreshList(true);
+        return;
+      }
+      case 'logout': logout(); return;
+      case 'refresh': await refreshList(false); return;
+      case 'new-case': go('newCase'); return;
+      case 'gen-number': {
+        const inp = root.querySelector('input[name=number]');
+        if (inp) inp.value = '临-' + stamp(Date.now()).slice(0, 8) + '-' + stamp(Date.now()).slice(8) + '-' + state.user.name;
+        return;
+      }
+      case 'open-case': await openCase(el.dataset.id); return;
+      case 'reload-case': await openCase(state.caseData.id, true); toast('已刷新', 'ok', 1200); return;
+      case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
+      case 'edit-info': showInfoModal(); return;
+      case 'delete-case': await deleteCase(); return;
+      case 'capture': {
+        const kind = el.dataset.kind;
+        if (kind === 'seizedPhoto') syncSeizedForm();
+        if (kind === 'evidence' && modal.kind === 'viewer') closeModal();
+        state.pendingCapture = { kind, itemId: el.dataset.item };
+        const inp = el.dataset.src === 'album' ? albumInput : cameraInput;
+        inp.value = ''; inp.click();
+        return;
+      }
+      case 'view-photo': ev.stopPropagation(); await showPhotoViewer(el.dataset.kind, el.dataset.item); return;
+      case 'photo-del': closeModal(); await deletePhoto(el.dataset.kind, el.dataset.item); return;
+      case 'goto-item': {
+        ev.preventDefault();
+        const t = document.getElementById('item-' + el.dataset.item);
+        if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
+        return;
+      }
+      case 'seized-add': state.seizedEdit = { id: null, brand: '', qty: '', unit: '条', barcode: '', thumb: '' }; renderSeizedModal(); return;
+      case 'seized-edit': {
+        const s = state.caseData.seizedItems.find(x => x.id === el.dataset.id); if (!s) return;
+        state.seizedEdit = { id: s.id, brand: s.brand || '', qty: s.qty === '' || s.qty == null ? '' : String(s.qty), unit: s.unit || '条', barcode: s.barcode || '', thumb: s.thumb || '' };
+        renderSeizedModal(); return;
+      }
+      case 'seized-del': {
+        const s = state.caseData.seizedItems.find(x => x.id === el.dataset.id); if (!s) return;
+        if (!(await confirmDialog('确定删除查获卷烟记录"' + (s.brand || '品规未填') + ' ' + (s.qty || '') + (s.unit || '') + '"吗？', { danger: true, okText: '删除' }))) return;
+        let removed = null;
+        const saved = await mutateCase(state.caseData.id, cc => {
+          const i = cc.seizedItems.findIndex(x => x.id === s.id); if (i < 0) return false;
+          removed = cc.seizedItems.splice(i, 1)[0];
+          addLog(cc, '删除查获卷烟', (removed.brand || '') + ' ' + (removed.qty || '') + (removed.unit || ''));
+        });
+        if (saved && removed && removed.photoId) Store.del(photoKey(removed.photoId), true);
+        render(); return;
+      }
+      case 'scan-barcode': {
+        syncSeizedForm();
+        if (!barcodeSupported()) {
+          state.seizedEdit.barcodeMsg = '当前浏览器不支持条码自动识别，请手工输入条码';
+          renderSeizedModal(); toast('当前浏览器不支持条码自动识别，请手工输入', 'warn');
+          const inp = modalRoot.querySelector('input[name=barcode]'); if (inp) inp.focus();
+          return;
+        }
+        state.pendingCapture = { kind: 'barcode' };
+        cameraInput.value = ''; cameraInput.click();
+        return;
+      }
+      case 'package': await generatePackage(); return;
+      case 'download-again': if (state.lastPackage) downloadBlob(state.lastPackage.blob, state.lastPackage.filename); return;
+      case 'share-package': {
+        const p = state.lastPackage; if (!p) return;
+        try { await navigator.share({ files: [p.file], title: p.filename }); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失败，请使用"再次下载"', 'error'); }
+        return;
+      }
+      // 用户管理
+      case 'user-reset': {
+        const u = state.users.find(x => x.id === el.dataset.id); if (!u) return;
+        showModal('<h3>重置 ' + esc(u.name) + ' 的 PIN</h3><form data-form="resetPin" data-id="' + esc(u.id) + '"><label class="field"><span>新 PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>' +
+          '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">确定</button></div></form>', 'form');
+        return;
+      }
+      case 'user-role': {
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === el.dataset.id); if (!u) return;
+        const toRole = u.role === 'admin' ? 'inspector' : 'admin';
+        if (toRole === 'inspector' && users.filter(x => x.role === 'admin').length <= 1) { toast('不能取消最后一个管理员', 'error'); return; }
+        if (!(await confirmDialog('确定将 ' + u.name + ' 设为' + roleText(toRole) + '吗？', { okText: '确定' }))) return;
+        u.role = toRole;
+        if (await saveUsers(users)) {
+          if (u.id === state.user.id) { state.user = u; toast('你已不再是管理员', 'warn'); go('cases', {}, true); return; }
+          toast('已修改', 'ok'); render();
+        }
+        return;
+      }
+      case 'user-del': {
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === el.dataset.id); if (!u) return;
+        if (u.id === state.user.id) { toast('不能删除当前登录的账号', 'error'); return; }
+        if (u.role === 'admin' && users.filter(x => x.role === 'admin').length <= 1) { toast('不能删除最后一个管理员', 'error'); return; }
+        const n = state.index.filter(e => e.assignedTo === u.id).length;
+        if (!(await confirmDialog('确定删除用户"' + u.name + '"吗？' + (n ? '\n该用户名下有 ' + n + ' 个承办案件，删除后需重新分配。' : ''), { danger: true, okText: '删除用户', title: '删除用户' }))) return;
+        if (await saveUsers(users.filter(x => x.id !== u.id))) { toast('已删除', 'ok'); render(); }
+        return;
+      }
+      // 模板管理
+      case 'tpl-new': state.editTemplate = { id: 't-' + uid(), name: '', requiresSeizedItems: true, categories: [{ name: '', items: [{ id: uid(), name: '', required: true }] }], isNew: true }; go('templateEdit'); return;
+      case 'tpl-edit': { const t = findTemplate(el.dataset.id); if (!t) return; state.editTemplate = clone(t); go('templateEdit'); return; }
+      case 'tpl-del': {
+        const t = findTemplate(el.dataset.id); if (!t) return;
+        if (state.templates.length <= 1) { toast('至少保留一个模板', 'error'); return; }
+        if (!(await confirmDialog('确定删除模板"' + t.name + '"吗？\n已建案件不受影响（保留创建时的清单），之后不能再新建该类型案件。', { danger: true, okText: '删除模板', title: '删除模板' }))) return;
+        const list = state.templates.filter(x => x.id !== t.id);
+        if (await setJSON(K.templates, list, true)) { state.templates = list; toast('已删除', 'ok'); render(); }
+        return;
+      }
+      case 'tpl-restore': {
+        const have = new Set(state.templates.map(t => t.id));
+        const add = defaultTemplates().filter(t => !have.has(t.id));
+        if (!add.length) { toast('默认模板均已存在'); return; }
+        const list = state.templates.concat(add);
+        if (await setJSON(K.templates, list, true)) { state.templates = list; toast('已恢复 ' + add.length + ' 个默认模板', 'ok'); render(); }
+        return;
+      }
+      case 'tpl-add-cat': state.editTemplate.categories.push({ name: '', items: [{ id: uid(), name: '', required: true }] }); render(); return;
+      case 'tpl-del-cat': {
+        const ci = +el.dataset.ci;
+        if (state.editTemplate.categories.length <= 1) { toast('至少保留一个类别', 'error'); return; }
+        if (!(await confirmDialog('确定删除类别"' + (state.editTemplate.categories[ci].name || '未命名') + '"及其全部拍摄项目吗？', { danger: true, okText: '删除' }))) return;
+        state.editTemplate.categories.splice(ci, 1); render(); return;
+      }
+      case 'tpl-add-item': state.editTemplate.categories[+el.dataset.ci].items.push({ id: uid(), name: '', required: true }); render(); return;
+      case 'tpl-del-item': state.editTemplate.categories[+el.dataset.ci].items.splice(+el.dataset.ii, 1); render(); return;
+      case 'tpl-up': {
+        const items = state.editTemplate.categories[+el.dataset.ci].items; const ii = +el.dataset.ii;
+        if (ii > 0) { [items[ii - 1], items[ii]] = [items[ii], items[ii - 1]]; render(); }
+        return;
+      }
+      case 'tpl-save': {
+        const t = state.editTemplate;
+        t.name = t.name.trim();
+        if (!t.name) { toast('请填写案件类型名称', 'error'); return; }
+        if (state.templates.some(x => x.id !== t.id && x.name === t.name)) { toast('已有同名模板', 'error'); return; }
+        t.categories = t.categories.map(c => ({ name: c.name.trim(), items: c.items.map(i => ({ id: i.id, name: i.name.trim(), required: !!i.required })).filter(i => i.name) })).filter(c => c.items.length);
+        if (t.categories.some(c => !c.name)) { toast('请填写类别名称', 'error'); render(); return; }
+        if (!t.categories.length) { toast('至少需要一个拍摄项目', 'error'); render(); return; }
+        const isNew = t.isNew; delete t.isNew;
+        const list = (await getJSON(K.templates, true, state.templates)).slice();
+        const i = list.findIndex(x => x.id === t.id);
+        if (i >= 0) list[i] = t; else list.push(t);
+        if (await setJSON(K.templates, list, true)) { state.templates = list; state.editTemplate = null; toast(isNew ? '已新建模板' : '已保存（只影响之后新建的案件）', 'ok'); go('templates', {}, true); }
+        else t.isNew = isNew;
+        return;
+      }
+      case 'barcode-del': {
+        const code = el.dataset.code;
+        if (!(await confirmDialog('确定从条码库删除 ' + code + '（' + state.barcodeDict[code] + '）吗？', { danger: true, okText: '删除' }))) return;
+        const dict = await getJSON(K.barcodes, true, {}) || {}; delete dict[code];
+        if (await setJSON(K.barcodes, dict, true)) { state.barcodeDict = dict; render(); }
+        return;
+      }
+      case 'export': await exportData(); return;
+      case 'import': importInput.value = ''; importInput.click(); return;
+      case 'rebuild-index': await rebuildIndex(); return;
+    }
+  }
+
+  /* ========================= 事件绑定（委托） ========================= */
+  let running = 0;
+  async function run(fn) {
+    running++;
+    try { await fn(); } catch (e) { hideBusy(); console.warn(e); toast('操作失败：' + (e && e.message ? e.message : e), 'error', 5000); } finally { running--; }
+  }
+  function onClick(ev) {
+    const el = ev.target.closest('[data-action]');
+    if (!el || !ev.currentTarget.contains(el)) return;
+    if (el.tagName === 'A') ev.preventDefault();
+    run(() => handleAction(el.dataset.action, el, ev));
+  }
+  function onSubmit(ev) {
+    const f = ev.target.closest('form[data-form]'); if (!f) return;
+    ev.preventDefault();
+    const btn = f.querySelector('[type=submit]');
+    if (btn) { if (btn.disabled) return; btn.disabled = true; }
+    run(() => handleSubmit(f.dataset.form, f)).then(() => { if (btn && document.contains(btn)) btn.disabled = false; });
+  }
+  function onInput(ev) {
+    const el = ev.target;
+    if (el.dataset.filter) {
+      state.filters[el.dataset.filter] = el.value;
+      renderCaseList();
+      return;
+    }
+    if (el.dataset.tpl && state.editTemplate) {
+      const t = state.editTemplate; const ci = +el.dataset.ci, ii = +el.dataset.ii;
+      if (el.dataset.tpl === 'name') t.name = el.value;
+      if (el.dataset.tpl === 'seized') t.requiresSeizedItems = el.checked;
+      if (el.dataset.tpl === 'cat') t.categories[ci].name = el.value;
+      if (el.dataset.tpl === 'item') t.categories[ci].items[ii].name = el.value;
+      if (el.dataset.tpl === 'req') t.categories[ci].items[ii].required = el.checked;
+      return;
+    }
+    if (ev.type === 'change' && el.dataset.setting) {
+      state.settings[el.dataset.setting] = el.checked;
+      run(async () => { const s = Object.assign({}, await getJSON(K.settings, true, {}), { [el.dataset.setting]: el.checked }); if (await setJSON(K.settings, s, true)) { state.settings = Object.assign({ watermark: true }, s); toast('已保存设置', 'ok', 1200); } });
+      return;
+    }
+    if (ev.type === 'change' && el.dataset.pref) {
+      state.prefs[el.dataset.pref] = el.checked;
+      run(async () => { if (await setJSON(K.prefs, state.prefs, false)) toast('已保存设置', 'ok', 1200); });
+      return;
+    }
+    if (el.name === 'barcode' && modal.kind === 'seized') {
+      const code = el.value.trim();
+      const msg = modalRoot.querySelector('#barcode-msg');
+      const chk = checkGtin(code);
+      const known = state.barcodeDict[code];
+      const brand = modalRoot.querySelector('input[name=brand]');
+      if (known && brand && !brand.value.trim()) { brand.value = known; }
+      if (msg) {
+        msg.className = 'small ' + (chk === false ? 'warn-text' : 'muted');
+        msg.textContent = chk === false ? '条码校验位不符，请核对是否输错' : (known ? '条码库：' + known : '');
+      }
+    }
+  }
+  [root, modalRoot].forEach(r => {
+    r.addEventListener('click', onClick);
+    r.addEventListener('submit', onSubmit);
+    r.addEventListener('input', onInput);
+    r.addEventListener('change', onInput);
+  });
+  function onFileChosen(ev) {
+    const inp = ev.target;
+    const file = inp.files && inp.files[0];
+    const ctx = state.pendingCapture; state.pendingCapture = null;
+    if (!file || !ctx) return;
+    ctx.source = inp === albumInput ? 'album' : 'camera';
+    run(() => handleCapturedFile(file, ctx)).then(() => { inp.value = ''; });
+  }
+  cameraInput.addEventListener('change', onFileChosen);
+  albumInput.addEventListener('change', onFileChosen);
+  importInput.addEventListener('change', () => { const f = importInput.files && importInput.files[0]; if (f) run(() => importData(f)); });
+  $('#save-banner-close').addEventListener('click', () => { $('#save-banner').hidden = true; });
+
+  // 列表每 30 秒自动刷新（无实时同步）
+  setInterval(() => {
+    if (state.user && state.view === 'cases' && !modal.kind && !document.hidden) run(() => refreshList(true));
+  }, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.user && state.view === 'cases' && !modal.kind) run(() => refreshList(true));
+  });
+
+  /* ========================= 启动 ========================= */
+  async function loadShared() {
+    state.users = await getJSON(K.users, true, []) || [];
+    let tpls = await getJSON(K.templates, true, null);
+    if (!Array.isArray(tpls) || !tpls.length) {
+      tpls = defaultTemplates();
+      await setJSON(K.templates, tpls, true);
+    }
+    state.templates = tpls;
+    state.settings = Object.assign({ watermark: true }, await getJSON(K.settings, true, {}));
+    state.barcodeDict = await getJSON(K.barcodes, true, {}) || {};
+    state.index = await getJSON(K.index, true, []) || [];
+  }
+  async function init() {
+    await Store.init();
+    await loadShared();
+    state.ready = true;
+    if (!state.users.length) { go('setup', {}, true); return; }
+    const sess = await getJSON(K.session, false, null);
+    const u = sess && state.users.find(x => x.id === sess.userId);
+    if (u) {
+      state.user = u;
+      state.prefs = Object.assign({ geo: true }, await getJSON(K.prefs, false, {}));
+      state.lastRefresh = Date.now();
+      go('cases', {}, true);
+    } else go('login', {}, true);
+    if (navigator.storage && navigator.storage.estimate) {
+      try {
+        const est = await navigator.storage.estimate();
+        const show = () => { const q = $('#quota'); if (q && est.quota) q.textContent = '约 ' + fmtSize(est.usage || 0) + ' / 可用 ' + fmtSize(est.quota); };
+        new MutationObserver(show).observe(root, { childList: true }); show();
+      } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  // 供自动化测试读取的只读接口
+  window.__EVIDENCE_APP__ = {
+    version: APP_VERSION,
+    analyzeImageData, checkGtin, seizedItemValid, safeName,
+    get backend() { return Store.backend; },
+    get idle() { return running === 0; },
+    get state() { return { view: state.view, user: state.user && { id: state.user.id, name: state.user.name, role: state.user.role }, caseId: state.caseId }; }
+  };
+
+  render();
+  run(init);
+})();
+</script>
+</body>
+</html>

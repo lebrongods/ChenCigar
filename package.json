@@ -1,0 +1,14 @@
+{
+  "name": "tobacco-evidence-collector",
+  "version": "2.0.0",
+  "private": true,
+  "description": "涉烟案件现场证据采集系统（单文件 HTML）",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node build.js && node tests/run-all.js"
+  },
+  "devDependencies": {
+    "jszip": "3.10.1",
+    "playwright": "1.56.1"
+  }
+}
