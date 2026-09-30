@@ -146,6 +146,20 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 .type-choice label:has(input:checked) { border-color: var(--pri); background: var(--pri-l); }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 8px; }
 .section-title h2 { margin: 0; }
+.match-box { margin: -6px 0 10px; }
+.match { padding: 8px 10px; border-radius: 8px; background: #f1f3f2; font-size: 14px; overflow-wrap: anywhere; }
+.match.ok { background: var(--ok-l); border: 1px solid #b9e0c7; }
+.match.warn { background: var(--warn-l); color: var(--warn); }
+.match-list { display: flex; flex-direction: column; gap: 6px; }
+.match-pick { justify-content: flex-start; text-align: left; }
+.stepper { display: flex; gap: 6px; }
+.stepper input { text-align: center; min-width: 0; }
+.stepper .btn { flex: none; width: 48px; font-size: 20px; padding: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips .btn { flex: 1 1 44px; }
+.subtotal { background: #f6f7f6; border-radius: 8px; padding: 8px 10px; margin: -4px 0 12px; font-size: 14px; }
+.seized-item .grow { line-height: 1.45; }
+.seized-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 14px; }
 </style>
 </head>
 <body>
@@ -157,6 +171,7 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
 <input type="file" id="album-input" accept="image/*" hidden>
 <input type="file" id="import-input" accept="application/json,.json" hidden>
+<input type="file" id="catalog-input" accept=".csv,text/csv" hidden>
 <!-- JSZip 3.10.1（MIT 许可），内联以支持无网络环境打包 -->
 <script>/*!
 
@@ -176,7 +191,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.0.0';
+  const APP_VERSION = '2.1.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -191,7 +206,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf'];
   const UNITS = ['条', '包', '支', '件'];
   const PIN_RE = /^\d{4,6}$/;
-  const K = { templates: 'templates', index: 'case-index', users: 'users', settings: 'settings', barcodes: 'barcode-dict', session: 'current-session', prefs: 'prefs' };
+  const K = { templates: 'templates', index: 'case-index', users: 'users', settings: 'settings', barcodes: 'barcode-dict', priceCatalog: 'price-catalog', session: 'current-session', prefs: 'prefs' };
   const caseKey = id => 'case:' + id;
   const photoKey = id => 'photo:' + id;
 
@@ -447,7 +462,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   /* ========================= 状态 ========================= */
   const state = {
     ready: false,
-    users: [], templates: [], settings: { watermark: true }, barcodeDict: {}, index: [], prefs: { geo: true },
+    users: [], templates: [], settings: { watermark: true }, barcodeDict: {}, customCatalog: null, index: [], prefs: { geo: true },
     user: null,
     view: 'loading',
     caseId: null, caseData: null, caseDirty: false,
@@ -789,6 +804,202 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return (10 - (sum % 10)) % 10 === check;
   }
 
+  /* ========================= 价格目录与核价 ========================= */
+  // 内置价格目录（构建时由 data/price-catalog.json 注入）；管理员可在"管理-价格目录"导入新目录覆盖
+  const BUILTIN_CATALOG = {"title":"2025年下半年湖南省卷烟、雪茄烟品牌价格目录","version":"2025年下半年","issued":"湖南省烟草专卖局办公室 2025年6月26日印发","items":[{"code":"6901028245111","name":"白沙（和天下尊品中支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1200,"unit":"条"},{"code":"6901028245142","name":"白沙（和天下尊品细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028196932","name":"白沙（和天下）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028063043","name":"白沙（硬和天下尊享）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028204804","name":"白沙（硬和天下双中支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028196055","name":"白沙（硬细支和天下）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028196024","name":"白沙（软和天下）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028193924","name":"芙蓉王（软蓝）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":550,"unit":"条"},{"code":"6901028064934","name":"芙蓉王（硬领航）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028245562","name":"芙蓉王（锦绣细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028245777","name":"芙蓉王（锦绣）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028205993","name":"芙蓉王（荣耀中支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":450,"unit":"条"},{"code":"6901028193863","name":"芙蓉王（蓝）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028191623","name":"芙蓉王（硬闪带细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028063883","name":"芙蓉王（硬蓝新版）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028195935","name":"芙蓉王（绽放）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028205634","name":"芙蓉王（硬红宝石）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":320,"unit":"条"},{"code":"6901028204835","name":"芙蓉王（硬中支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028195027","name":"芙蓉王（沁爽细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028201728","name":"芙蓉王（硬细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028063821","name":"芙蓉王（硬75mm）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028193504","name":"芙蓉王（硬）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028064729","name":"白沙（硬新和气生财细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028201452","name":"白沙（硬和气生财）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":550,"unit":"条"},{"code":"6901028204866","name":"白沙（软珍品）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028245388","name":"白沙（瑞中支）","maker":"湖南中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028196413","name":"白沙（硬蓝尚品）","maker":"湖南中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028063708","name":"白沙（硬红运当头）","maker":"湖南中烟","cat":"国产卷烟","cls":"二类","retail":200,"unit":"条"},{"code":"6901028064842","name":"白沙（硬天天向上细支）","maker":"湖南中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028192736","name":"白沙（硬精品三代）","maker":"湖南中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028063371","name":"白沙（硬新精品二代）","maker":"湖南中烟","cat":"国产卷烟","cls":"三类","retail":120,"unit":"条"},{"code":"6901028191166","name":"白沙（精品）","maker":"湖南中烟","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028191135","name":"白沙（软）","maker":"湖南中烟","cat":"国产卷烟","cls":"三类","retail":90,"unit":"条"},{"code":"6901028191142","name":"白沙（硬）","maker":"湖南中烟","cat":"国产卷烟","cls":"三类","retail":90,"unit":"条"},{"code":"6901028195058","name":"相思鸟（软）","maker":"湖南中烟","cat":"国产卷烟","cls":"五类","retail":30,"unit":"条"},{"code":"6901028199421","name":"芙蓉（软红）","maker":"湖南中烟","cat":"国产卷烟","cls":"五类","retail":30,"unit":"条"},{"code":"6901028247375","name":"双喜（春天·咖路里）","maker":"广东中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028000949","name":"双喜（硬世纪经典）","maker":"广东中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028005210","name":"双喜（硬红五叶神）","maker":"广东中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028009744","name":"双喜（勿忘我）","maker":"广东中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028001625","name":"双喜（硬经典1906）","maker":"广东中烟","cat":"国产卷烟","cls":"二类","retail":180,"unit":"条"},{"code":"6901028008464","name":"双喜（花悦）","maker":"广东中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028005159","name":"双喜（莲香）","maker":"广东中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028000659","name":"双喜（硬经典）","maker":"广东中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028005036","name":"双喜（硬金五叶神）","maker":"广东中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028000833","name":"双喜（软经典）","maker":"广东中烟","cat":"国产卷烟","cls":"三类","retail":120,"unit":"条"},{"code":"6901028216708","name":"利群（休闲细支）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028265263","name":"利群（阳光细支）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":450,"unit":"条"},{"code":"6901028217064","name":"利群（阳光尊中支）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028120708","name":"利群（软长嘴）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":360,"unit":"条"},{"code":"6901028119009","name":"利群（西子阳光）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":310,"unit":"条"},{"code":"6901028217576","name":"利群（阳光青中支）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028217545","name":"利群（山外山）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028121828","name":"利群（江南韵）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028118828","name":"利群（长嘴）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028121736","name":"利群（楼外楼）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028207508","name":"利群（软红长嘴）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028121521","name":"利群（夜西湖）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028216166","name":"利群（软蓝）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":180,"unit":"条"},{"code":"6901028118187","name":"利群（新版）","maker":"浙江中烟","cat":"国产卷烟","cls":"二类","retail":180,"unit":"条"},{"code":"6901028340700","name":"云烟（中支大重九）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028312356","name":"云烟（细支大重九）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028051989","name":"云烟（软大重九）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028318464","name":"云烟（黑金刚印象）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028333726","name":"云烟（中支小重九）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028314459","name":"玉溪（硬和谐）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028324953","name":"玉溪（合顺）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028325257","name":"玉溪（细支缤果爆）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028322867","name":"玉溪（鑫中支）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028045919","name":"云烟（软珍品）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028317177","name":"玉溪（软）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028053143","name":"玉溪（初心）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028340618","name":"云烟（小熊猫家园）","maker":"云南中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028339957","name":"云烟（细支云龙）","maker":"云南中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028339896","name":"云烟（硬云龙）","maker":"云南中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028311168","name":"云烟（软紫）","maker":"云南中烟","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028046893","name":"云烟（紫）","maker":"云南中烟","cat":"国产卷烟","cls":"二类","retail":130,"unit":"条"},{"code":"6901028316897","name":"红塔山（新时代）","maker":"云南中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028314985","name":"红塔山（硬经典）","maker":"云南中烟","cat":"国产卷烟","cls":"三类","retail":90,"unit":"条"},{"code":"6901028055314","name":"红河（软甲）","maker":"云南中烟","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028212526","name":"熊猫（典藏中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":1200,"unit":"条"},{"code":"6901028212670","name":"熊猫（经典细支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028212588","name":"熊猫（硬经典）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028018630","name":"中华（金中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028212649","name":"中华(细支3mg)","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028212137","name":"中华（金细支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":900,"unit":"条"},{"code":"6901028075022","name":"中华（软）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":700,"unit":"条"},{"code":"6901028212229","name":"中华（细支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028018722","name":"中华（双中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":550,"unit":"条"},{"code":"6901028075015","name":"中华（硬）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":450,"unit":"条"},{"code":"6901028212199","name":"牡丹（蓝中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028212434","name":"牡丹（恒大天青细支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028010863","name":"中南海（冰耀细支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028212250","name":"牡丹（红中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028018227","name":"大前门（短支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028010771","name":"中南海（冰耀中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028212168","name":"牡丹（飞马）","maker":"上海烟草","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028075053","name":"牡丹（软）","maker":"上海烟草","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028075138","name":"大前门（软）","maker":"上海烟草","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028221665","name":"贵烟（细支国酒香30）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028095075","name":"贵烟（魔力）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028102094","name":"贵烟（红中支）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028095044","name":"贵烟（山水）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028221450","name":"贵烟（跨越）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028037068","name":"贵烟（喜）","maker":"贵州中烟","cat":"国产卷烟","cls":"二类","retail":170,"unit":"条"},{"code":"6901028039758","name":"贵烟（硬黄精品）","maker":"贵州中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028221634","name":"贵烟（金百合）","maker":"贵州中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028095891","name":"黄果树（长征）","maker":"贵州中烟","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028062886","name":"南京（细支九五3mg）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":1200,"unit":"条"},{"code":"6901028301695","name":"南京（软九五）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028112987","name":"南京（细支九五）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028062701","name":"南京（雨花石3mg）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":650,"unit":"条"},{"code":"6901028111546","name":"南京（雨花石）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":530,"unit":"条"},{"code":"6901028112505","name":"南京（大观园爆冰）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028062329","name":"南京（十二钗烤烟）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":280,"unit":"条"},{"code":"6901028062015","name":"苏烟（五星红杉树）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028062350","name":"南京（十二钗薄荷）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028115148","name":"南京（梦都）","maker":"江苏中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028111270","name":"南京（炫赫门）","maker":"江苏中烟","cat":"国产卷烟","cls":"二类","retail":190,"unit":"条"},{"code":"6901028125888","name":"黄山（徽商新视界细支）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028089692","name":"黄山（天高云淡细支）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028125970","name":"黄山（徽商新概念细支）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028126441","name":"黄山（徽商新概念）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028225113","name":"黄山（金皖烟）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":280,"unit":"条"},{"code":"6901028124966","name":"黄山（小红方印）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028208949","name":"黄山（红方印细支）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028223744","name":"黄山（记忆）","maker":"安徽中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028225175","name":"黄山（新制皖烟）","maker":"安徽中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028126007","name":"黄山（新一品）","maker":"安徽中烟","cat":"国产卷烟","cls":"三类","retail":80,"unit":"条"},{"code":"6901028013611","name":"真龙（海韵）","maker":"广西中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028011785","name":"真龙（起源）","maker":"广西中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028013772","name":"真龙（美人香草）","maker":"广西中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028012003","name":"真龙（凌云）","maker":"广西中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028013796","name":"真龙（祥云）","maker":"广西中烟","cat":"国产卷烟","cls":"二类","retail":130,"unit":"条"},{"code":"6901028015875","name":"真龙（锦绣）","maker":"广西中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028015547","name":"真龙（软娇子）","maker":"广西中烟","cat":"国产卷烟","cls":"三类","retail":65,"unit":"条"},{"code":"6901028161862","name":"黄金叶（天叶中支）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":1200,"unit":"条"},{"code":"6901028263696","name":"黄金叶（天叶细支3mg）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028165860","name":"黄金叶（天叶细支）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028169967","name":"黄金叶（天叶）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028165365","name":"黄金叶（天香细支）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":550,"unit":"条"},{"code":"6901028252980","name":"黄金叶（大成细支）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028172509","name":"黄金叶（商鼎）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028161817","name":"黄金叶（炫尚）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028165242","name":"黄金叶（爱尚）","maker":"河南中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028160285","name":"黄金叶（乐途）","maker":"河南中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028165921","name":"黄金叶（小目标）","maker":"河南中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028162876","name":"黄金叶（喜满堂）","maker":"河南中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028164177","name":"红旗渠（雪茄）","maker":"河南中烟","cat":"国产卷烟","cls":"四类","retail":50,"unit":"条"},{"code":"6901028190374","name":"黄鹤楼（硬15细支）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028218634","name":"黄鹤楼（硬1916红爆）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028187855","name":"黄鹤楼（软1916）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028184304","name":"黄鹤楼（硬平安）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028218900","name":"黄鹤楼（3mg）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028241410","name":"黄鹤楼（视窗）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028181457","name":"黄鹤楼（硬峡谷柔情）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028188029","name":"黄鹤楼（硬峡谷情细支）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028219174","name":"黄鹤楼（硬奇景）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028180580","name":"黄鹤楼（软蓝）","maker":"湖北中烟","cat":"国产卷烟","cls":"一类","retail":190,"unit":"条"},{"code":"6901028180818","name":"黄鹤楼（天下名楼）","maker":"湖北中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028940504","name":"红金龙（硬新版）","maker":"湖北中烟","cat":"国产卷烟","cls":"四类","retail":50,"unit":"条"},{"code":"6901028155977","name":"泰山（茉莉香韵）","maker":"山东中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028154628","name":"泰山（儒风细支）","maker":"山东中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028159579","name":"泰山（青秀）","maker":"山东中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028150378","name":"泰山（望岳）","maker":"山东中烟","cat":"国产卷烟","cls":"一类","retail":190,"unit":"条"},{"code":"6901028159753","name":"泰山（心悦）","maker":"山东中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028155557","name":"泰山（颜悦）","maker":"山东中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028151634","name":"泰山（白将军）","maker":"山东中烟","cat":"国产卷烟","cls":"二类","retail":130,"unit":"条"},{"code":"6901028157650","name":"泰山（红将军）","maker":"山东中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028159548","name":"泰山（硬红八喜）","maker":"山东中烟","cat":"国产卷烟","cls":"三类","retail":65,"unit":"条"},{"code":"6901028920858","name":"金圣（智圣出山双中支）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028224284","name":"金圣（智圣出山·国味）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028133890","name":"金圣（吉品）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028136624","name":"金圣（滕王阁细支）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028224642","name":"金圣（青瓷）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":180,"unit":"条"},{"code":"6901028224079","name":"金圣（滕王阁·紫光）","maker":"江西中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028224161","name":"金圣（滕王阁·更上一层楼）","maker":"江西中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028136686","name":"金圣（硬滕王阁）","maker":"江西中烟","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028136389","name":"金圣（庐山）","maker":"江西中烟","cat":"国产卷烟","cls":"三类","retail":80,"unit":"条"},{"code":"6901028267342","name":"娇子（宽窄国宝细支）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条"},{"code":"6901028145473","name":"娇子（五粮浓香中支）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028042635","name":"娇子（宽窄好运）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028268981","name":"娇子（宽窄锦上细支）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028145077","name":"娇子（宽窄好运细支）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028042963","name":"娇子（五粮醇香）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028268950","name":"娇子（格调中支）","maker":"四川中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028084772","name":"娇子（格调细支）","maker":"四川中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028024976","name":"娇子（X）","maker":"四川中烟","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028084321","name":"娇子（软阳光）","maker":"四川中烟","cat":"国产卷烟","cls":"三类","retail":100,"unit":"条"},{"code":"6901028257169","name":"娇子（蓝时代）","maker":"四川中烟","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028209441","name":"七匹狼（小金砖）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028209472","name":"七匹狼（观海中支）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028209113","name":"七匹狼（银中支）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028138536","name":"七匹狼（软灰）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":210,"unit":"条"},{"code":"6901028143851","name":"金桥（冰爆）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028211925","name":"金桥（炫影细支）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028143554","name":"七匹狼（锋芒）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":180,"unit":"条"},{"code":"6901028211352","name":"七匹狼（纯境）","maker":"福建中烟","cat":"国产卷烟","cls":"二类","retail":180,"unit":"条"},{"code":"6901028137492","name":"七匹狼（红）","maker":"福建中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028211383","name":"七匹狼（英伦奶香）","maker":"福建中烟","cat":"国产卷烟","cls":"二类","retail":130,"unit":"条"},{"code":"6901028141147","name":"七匹狼（蓝）","maker":"福建中烟","cat":"国产卷烟","cls":"三类","retail":75,"unit":"条"},{"code":"6901028937894","name":"好猫（长安印象）","maker":"陕西中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028059114","name":"好猫（细支长乐吉祥）","maker":"陕西中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028937863","name":"延安（中支红韵）","maker":"陕西中烟","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028937832","name":"好猫（长乐九美）","maker":"陕西中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028936996","name":"好猫（招财猫1600）","maker":"陕西中烟","cat":"国产卷烟","cls":"一类","retail":180,"unit":"条"},{"code":"6901028058148","name":"好猫（细支长乐）","maker":"陕西中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028937504","name":"好猫（金丝猴）","maker":"陕西中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028936750","name":"好猫（长乐）","maker":"陕西中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028937535","name":"好猫（金猴王）","maker":"陕西中烟","cat":"国产卷烟","cls":"三类","retail":80,"unit":"条"},{"code":"6901028107389","name":"钻石（荷花小雅90mm细支）","maker":"河北中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条"},{"code":"6901028107150","name":"钻石（双中支荷花）","maker":"河北中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028080521","name":"钻石（细支荷花）","maker":"河北中烟","cat":"国产卷烟","cls":"一类","retail":450,"unit":"条"},{"code":"6901028077910","name":"钻石（软荷花）","maker":"河北中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028079990","name":"钻石（荷花）","maker":"河北中烟","cat":"国产卷烟","cls":"一类","retail":350,"unit":"条"},{"code":"6901028077705","name":"钻石（软绿）","maker":"河北中烟","cat":"国产卷烟","cls":"二类","retail":140,"unit":"条"},{"code":"6901028080347","name":"钻石（硬红）","maker":"河北中烟","cat":"国产卷烟","cls":"三类","retail":90,"unit":"条"},{"code":"6901028230094","name":"天子（黄中支）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028228466","name":"天子（千里江山细支）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028229074","name":"天子（中支）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028230186","name":"天子（C位）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028229432","name":"天子（硬珍品龙凤呈祥）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":210,"unit":"条"},{"code":"6901028227285","name":"天子（金）","maker":"重庆中烟","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028227346","name":"龙凤呈祥（硬）","maker":"重庆中烟","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028228916","name":"龙凤呈祥（遇见）","maker":"重庆中烟","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028227438","name":"龙凤呈祥（软魅力朝天门）","maker":"重庆中烟","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028227797","name":"龙凤呈祥（鸿运朝天门）","maker":"重庆中烟","cat":"国产卷烟","cls":"四类","retail":50,"unit":"条"},{"code":"6901028177214","name":"冬虫夏草（和润）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条"},{"code":"6901028177757","name":"冬虫夏草（双中支）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条"},{"code":"6901028177153","name":"云烟（硬苁蓉）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":130,"unit":"条"},{"code":"6901028067799","name":"兰州（黑中支）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028067591","name":"兰州（小青支）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028065504","name":"兰州（硬珍品）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":180,"unit":"条"},{"code":"6901028066013","name":"兰州（硬如意）","maker":"中烟实业","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028066877","name":"兰州（硬蓝）","maker":"中烟实业","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028057356","name":"双喜（金万象好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028057233","name":"双喜（好日子城市之光）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028057561","name":"双喜（硬红火好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"6901028057080","name":"双喜（硬晶彩好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028942911","name":"双喜（软珍品好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028006415","name":"双喜（硬祥和好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028942881","name":"双喜（硬精品好日子）","maker":"中烟实业","cat":"国产卷烟","cls":"三类","retail":110,"unit":"条"},{"code":"6901028096010","name":"长白山（人参参缘）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"6901028098908","name":"长白山（心归细支）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028249195","name":"云烟（细支苁蓉)","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028099783","name":"长白山（神韵）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":220,"unit":"条"},{"code":"6901028098335","name":"长白山（蓝尚）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":180,"unit":"条"},{"code":"6901028100274","name":"长白山（777）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028104739","name":"龙烟（老巴夺传呈）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028104692","name":"龙烟（呈祥）","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028249287","name":"白沙（昭君)","maker":"中烟实业","cat":"国产卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"6901028104241","name":"哈尔滨（老巴夺）","maker":"中烟实业","cat":"国产卷烟","cls":"三类","retail":120,"unit":"条"},{"code":"6901028249256","name":"白沙（长丰)","maker":"中烟实业","cat":"国产卷烟","cls":"三类","retail":70,"unit":"条"},{"code":"6901028204026","name":"万宝路（硬冰爵2.0）","maker":"厦门调拨站","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"6901028064996","name":"万宝路（硬金3.0）","maker":"厦门调拨站","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"6901028143738","name":"万宝路（硬红2.0）","maker":"厦门调拨站","cat":"国产卷烟","cls":"一类","retail":200,"unit":"条"},{"code":"6901028143448","name":"万宝路（软红2.0）","maker":"厦门调拨站","cat":"国产卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"6901028121460","name":"利群（红利）","maker":"浙江中烟","cat":"国产卷烟","cls":"一类","retail":1000,"unit":"条","exit":true},{"code":"6901028212618","name":"中华（金短支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":800,"unit":"条","exit":true},{"code":"6901028212281","name":"恒大（硬中支）","maker":"上海烟草","cat":"国产卷烟","cls":"一类","retail":230,"unit":"条","exit":true},{"code":"6901028089906","name":"黄山（软徽商）","maker":"安徽中烟","cat":"国产卷烟","cls":"一类","retail":600,"unit":"条","exit":true},{"code":"6901028037327","name":"贵烟（福）","maker":"贵州中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条","exit":true},{"code":"6901028211802","name":"七匹狼（古田金中支）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":500,"unit":"条","exit":true},{"code":"6901028169578","name":"黄金叶（国色双中支）","maker":"河南中烟","cat":"国产卷烟","cls":"一类","retail":400,"unit":"条","exit":true},{"code":"6901028247405","name":"双喜（春天自在）","maker":"广东中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条","exit":true},{"code":"6901028133333","name":"金圣（青瓷细支）","maker":"江西中烟","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条","exit":true},{"code":"6901028104302","name":"龙烟（老巴夺传琦）","maker":"中烟实业","cat":"国产卷烟","cls":"一类","retail":260,"unit":"条","exit":true},{"code":"6901028209144","name":"七匹狼（观海中支）","maker":"福建中烟","cat":"国产卷烟","cls":"一类","retail":300,"unit":"条","exit":true},{"code":"6901028129091","name":"王冠（智者010十支）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":200,"unit":"支"},{"code":"6901028131834","name":"王冠（国粹）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":150,"unit":"支"},{"code":"6901028223447","name":"王冠（梅兰竹菊）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028089074","name":"王冠（国粹满堂彩）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028089050","name":"王冠（浪漫假日）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":90,"unit":"支"},{"code":"6901028131919","name":"王冠（国粹风度）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":70,"unit":"支"},{"code":"6901028124652","name":"王冠（茶香之茶马古道）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":95,"unit":"支"},{"code":"6901028089210","name":"王冠（假日船长）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":60,"unit":"支"},{"code":"6901028088862","name":"王冠（假日阳光）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":50,"unit":"支"},{"code":"6901028088619","name":"王冠（假日.黄金海岸）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":45,"unit":"支"},{"code":"6901028132695","name":"王冠（蓝色假日）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":40,"unit":"支"},{"code":"6901028089920","name":"王冠（小国粹）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":30,"unit":"支"},{"code":"6901028131988","name":"王冠（经典铝2支全叶卷）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":35,"unit":"支"},{"code":"6901028178662","name":"黄鹤楼（1916兽首）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":300,"unit":"支"},{"code":"6901028181426","name":"黄鹤楼（公爵）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":260,"unit":"支"},{"code":"6901028184366","name":"黄鹤楼（1916雪之梦3号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":180,"unit":"支"},{"code":"6901028242080","name":"黄鹤楼（逍遥3号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":150,"unit":"支"},{"code":"6901028241359","name":"黄鹤楼（逍遥5号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":120,"unit":"支"},{"code":"6901028183901","name":"黄鹤楼（雪之梦8号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028241434","name":"黄鹤楼（逍遥6号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028242431","name":"黄鹤楼（雪之梦100）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028183703","name":"黄鹤楼（雪之梦6号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":90,"unit":"支"},{"code":"6901028242462","name":"黄鹤楼（逍遥7号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":85,"unit":"支"},{"code":"6901028184632","name":"黄鹤楼（雪之梦5号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":85,"unit":"支"},{"code":"6901028183741","name":"黄鹤楼（雪之梦7号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":70,"unit":"支"},{"code":"6901028218665","name":"黄鹤楼（雪之梦10号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":50,"unit":"支"},{"code":"6901028183994","name":"黄鹤楼（雪之梦9号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":44,"unit":"支"},{"code":"6901028154352","name":"泰山（巅峰2号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":420,"unit":"支"},{"code":"6901028154383","name":"泰山（巅峰5号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":300,"unit":"支"},{"code":"6901028941525","name":"泰山（都市丛林）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":200,"unit":"支"},{"code":"6901028154413","name":"泰山（巅峰6号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":180,"unit":"支"},{"code":"6901028158244","name":"泰山（超级战神）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":150,"unit":"支"},{"code":"6901028150712","name":"将军（大力神）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":80,"unit":"支"},{"code":"6901028155427","name":"将军（战神4号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":65,"unit":"支"},{"code":"6901028154758","name":"将军（战神3号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":60,"unit":"支"},{"code":"6901028941556","name":"泰山（战神5号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":50,"unit":"支"},{"code":"6901028150835","name":"将军（战神）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":46,"unit":"支"},{"code":"6901028145695","name":"长城（GL1号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":1000,"unit":"支"},{"code":"6901028145220","name":"长城（胜利）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":380,"unit":"支"},{"code":"6901028237055","name":"长城（GL3）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":308,"unit":"支"},{"code":"6901028029803","name":"长城（GJ5号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":260,"unit":"支"},{"code":"6901028145947","name":"长城（GL2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":420,"unit":"支"},{"code":"6901028257008","name":"长城（GJ1958）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":190,"unit":"支"},{"code":"6901028237451","name":"长城（GJ一九六四）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":185,"unit":"支"},{"code":"6901028238397","name":"长城（GJ6号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":200,"unit":"支"},{"code":"6901028238410","name":"长城（唯佳金字塔）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":170,"unit":"支"},{"code":"6901028085694","name":"长城（生肖版）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":150,"unit":"支"},{"code":"6901028145909","name":"长城（揽胜1号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":160,"unit":"支"},{"code":"6901028032957","name":"长城（10支132秘制）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":120,"unit":"支"},{"code":"6901028032605","name":"长城（5支传奇1号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028237086","name":"长城（132益川老坊3）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028258098","name":"长城（导师2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":90,"unit":"支"},{"code":"6901028042475","name":"长城（132奇迹）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":100,"unit":"支"},{"code":"6901028268448","name":"长城（导师7号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":50,"unit":"支"},{"code":"6901028029292","name":"长城（揽胜3号经典）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":80,"unit":"支"},{"code":"6901028258050","name":"长城（经典2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":70,"unit":"支"},{"code":"6901028035583","name":"长城3号","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":60,"unit":"支"},{"code":"6901028042499","name":"长城（132记忆）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":56,"unit":"支"},{"code":"6901028258982","name":"长城（盛世3号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":55,"unit":"支"},{"code":"6901028268462","name":"长城（导师6号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":60,"unit":"支"},{"code":"6901028258074","name":"长城（经典3号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":50,"unit":"支"},{"code":"6901028146005","name":"长城（红色132）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":40,"unit":"支"},{"code":"6901028258951","name":"长城（盛世6号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":35,"unit":"支"},{"code":"6901028032308","name":"长城（盛世5号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":30,"unit":"支"},{"code":"6901028145671","name":"狮牌（加勒比阳光）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":30,"unit":"支"},{"code":"6901028237611","name":"长城（132迷你2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":12,"unit":"支"},{"code":"6901028029599","name":"长城（论道1号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":4,"unit":"条"},{"code":"6901028089166","name":"王冠（香草MIX）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":3.5,"unit":"支"},{"code":"6901028088015","name":"王冠（赛悦）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":3,"unit":"支"},{"code":"6901028208352","name":"王冠（20支）","maker":"安徽中烟","cat":"国产雪茄烟","cls":"无","retail":1.5,"unit":"支"},{"code":"6901028184960","name":"黄鹤楼（雪之韵2号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":12,"unit":"支"},{"code":"6901028184755","name":"黄鹤楼（雪之韵6号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":7,"unit":"支"},{"code":"6901028241489","name":"黄鹤楼（迷你冰爽）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":2.5,"unit":"支"},{"code":"6901028158039","name":"将军（战神荣耀）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":20,"unit":"支"},{"code":"6901028155052","name":"泰山（巴哈马甜味）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":2.6,"unit":"支"},{"code":"6901028154710","name":"泰山（3G原味）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":3.5,"unit":"支"},{"code":"6901028155465","name":"泰山（3G沉香）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":3,"unit":"支"},{"code":"6901028238342","name":"长城（国之韵2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":20,"unit":"支"},{"code":"6901028238373","name":"长城（骑士1号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":15,"unit":"支"},{"code":"6901028237857","name":"长城（132迷你3号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":10,"unit":"支"},{"code":"6901028029384","name":"长城（毛氏雪茄2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":7.5,"unit":"支"},{"code":"6901028085724","name":"长城（壹叁贰13号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":4,"unit":"支"},{"code":"6901028084925","name":"长城（醇雅薄荷）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":1,"unit":"支"},{"code":"6901028028516","name":"工字（红）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":1.1,"unit":"支"},{"code":"6901028084864","name":"长城（醇雅奶香）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":0.72,"unit":"支"},{"code":"6901028239578","name":"泰山（战神黑金）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":120,"unit":"支"},{"code":"6901028239608","name":"泰山（战神白金）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":80,"unit":"支"},{"code":"6901028240772","name":"泰山（战神2号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":90,"unit":"支"},{"code":"6901028240802","name":"泰山（战神6号）","maker":"山东中烟","cat":"国产雪茄烟","cls":"无","retail":60,"unit":"支"},{"code":"6901028242615","name":"黄鹤楼（雪之韵8号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":6,"unit":"支"},{"code":"6901028178976","name":"黄鹤楼（炫彩）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":40,"unit":"支"},{"code":"6901028241335","name":"黄鹤楼（逍遥2号）","maker":"湖北中烟","cat":"国产雪茄烟","cls":"无","retail":220,"unit":"支"},{"code":"6901028258715","name":"长城（揽胜2号）","maker":"四川中烟","cat":"国产雪茄烟","cls":"无","retail":120,"unit":"支"},{"code":"8888075034715","name":"555（国际版）","maker":"中烟英美","cat":"进口卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"8888075034777","name":"555（老版细支）","maker":"中烟英美","cat":"进口卷烟","cls":"一类","retail":250,"unit":"条"},{"code":"8888075018616","name":"555（双冰）","maker":"中烟英美","cat":"进口卷烟","cls":"一类","retail":320,"unit":"条"},{"code":"8888075024037","name":"555（冰炫）","maker":"中烟英美","cat":"进口卷烟","cls":"一类","retail":240,"unit":"条"},{"code":"8888075005524","name":"555（金锐）","maker":"中烟英美","cat":"进口卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"8888075056014","name":"555（金天越）","maker":"中烟英美","cat":"进口卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"8888075074865","name":"建牌（薄荷紫冰）","maker":"英美烟草","cat":"进口卷烟","cls":"一类","retail":300,"unit":"条"},{"code":"4719579948892","name":"阿里山（硬宝相花）","maker":"家源开发","cat":"进口卷烟","cls":"一类","retail":360,"unit":"条"},{"code":"4719579946164","name":"阿里山（硬景泰典蓝）","maker":"家源开发","cat":"进口卷烟","cls":"一类","retail":270,"unit":"条"},{"code":"4719579946195","name":"阿里山（天韵）","maker":"家源开发","cat":"进口卷烟","cls":"二类","retail":150,"unit":"条"},{"code":"4719579941008","name":"大华（硬开元）","maker":"家源开发","cat":"进口卷烟","cls":"一类","retail":280,"unit":"条"},{"code":"4719579941329","name":"大华（黄金眼）","maker":"家源开发","cat":"进口卷烟","cls":"一类","retail":260,"unit":"条"},{"code":"8801116005581","name":"爱喜（幻变）","maker":"株式会社KT&G","cat":"进口卷烟","cls":"一类","retail":240,"unit":"条"},{"code":"8801116003914","name":"宝亨（宝珠）","maker":"株式会社KT&G","cat":"进口卷烟","cls":"一类","retail":240,"unit":"条"},{"code":"8801116006458","name":"爱喜（薄荷）","maker":"株式会社KT&G","cat":"进口卷烟","cls":"一类","retail":230,"unit":"条"},{"code":"4891132601014","name":"红双喜（爱国绿中支）","maker":"南洋兄弟","cat":"进口卷烟","cls":"一类","retail":280,"unit":"条"},{"code":"4891132540238","name":"红双喜（大喜）","maker":"南洋兄弟","cat":"进口卷烟","cls":"二类","retail":160,"unit":"条"},{"code":"4902210592503","name":"七星晶选（紫玉）","maker":"日本烟草","cat":"进口卷烟","cls":"一类","retail":430,"unit":"条"},{"code":"4893225002593","name":"高希霸（世纪六）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":1500,"unit":"支"},{"code":"4893225390188","name":"高希霸（罗布图木盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":880,"unit":"支"},{"code":"4893225390324","name":"高希霸（世纪二纸盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":500,"unit":"支"},{"code":"4893226003674","name":"千里达（守望者）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":600,"unit":"支"},{"code":"4893225020177","name":"蒙特（二号木盒10支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":600,"unit":"支"},{"code":"4893225002692","name":"蒙特（埃德蒙木盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":560,"unit":"支"},{"code":"4893226002301","name":"罗密欧（宽身丘吉尔）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":550,"unit":"支"},{"code":"4893225060104","name":"蒙特利（逍遥二号木盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":350,"unit":"支"},{"code":"4893225010680","name":"帕特加（喜维亚四号木盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":400,"unit":"支"},{"code":"4893225003187","name":"帕特加（尖顶二号木盒25支装）","maker":"英飞烽","cat":"进口雪茄烟","cls":"无价类","retail":410,"unit":"支"},{"code":"7623500282887","name":"大卫杜夫（雅玛撒鱼雷木盒12支装）","maker":"耀莱雪茄","cat":"进口雪茄烟","cls":"无价类","retail":500,"unit":"支"},{"code":"7623500334944","name":"大卫杜夫（丘吉尔至暗时刻托罗型纸盒20支装）","maker":"耀莱雪茄","cat":"进口雪茄烟","cls":"无价类","retail":570,"unit":"支"},{"code":"7623500279399","name":"大卫杜夫（经典2000纸盒25支装）","maker":"耀莱雪茄","cat":"进口雪茄烟","cls":"无价类","retail":290,"unit":"支"},{"code":"1689674111764","name":"寂静（红点系列罗布图木盒25支装）","maker":"北欧烟草","cat":"进口雪茄烟","cls":"无价类","retail":160,"unit":"支"},{"code":"1689674094173","name":"麦克纽杜（白色灵感罗布图木盒20支装）","maker":"北欧烟草","cat":"进口雪茄烟","cls":"无价类","retail":100,"unit":"支"},{"code":"1689674146261","name":"寂静红点系列白色罗布图雪茄","maker":"北欧雪茄","cat":"进口雪茄烟","cls":"无价类","retail":230,"unit":"支"},{"code":"1689674137382","name":"麦克纽杜橙色灵感罗布图","maker":"北欧雪茄","cat":"进口雪茄烟","cls":"无价类","retail":100,"unit":"支"},{"code":"1689674145394","name":"潮牌黄金马杜罗布图","maker":"北欧雪茄","cat":"进口雪茄烟","cls":"无价类","retail":120,"unit":"支"},{"code":"7623500332636","name":"大卫杜夫（丘吉尔至暗时刻丘吉尔型）","maker":"耀莱雪茄","cat":"进口雪茄烟","cls":"无价类","retail":500,"unit":"支"},{"code":"7623500267822","name":"大卫杜夫（尼加拉瓜托罗方形）","maker":"耀莱雪茄","cat":"进口雪茄烟","cls":"无价类","retail":510,"unit":"支"},{"code":"7460644704963","name":"多米尼加之花（1994伦巴）","maker":"万士丰","cat":"进口雪茄烟","cls":"无价类","retail":280,"unit":"支"},{"code":"7465603161818","name":"狮子牌（喀麦隆丘吉尔铝筒）","maker":"万士丰","cat":"进口雪茄烟","cls":"无价类","retail":220,"unit":"支"}]};
+  const CAT_UNIT_TIAO = { '条': 1, '包': 0.1, '支': 0.005 }; // 按每条 10 包、每包 20 支折算
+  function activeCatalog() { return state.customCatalog || BUILTIN_CATALOG || { title: '', version: '', issued: '', items: [] }; }
+  let catalogIndex = null, catalogIndexSrc = null;
+  function catalogMap() {
+    const cat = activeCatalog();
+    if (catalogIndexSrc !== cat) {
+      catalogIndex = new Map();
+      cat.items.forEach(it => catalogIndex.set(it.code, it));
+      catalogIndexSrc = cat;
+    }
+    return catalogIndex;
+  }
+  // 条码库（本地补充）条目：兼容旧格式（值为品规字符串）
+  function dictEntry(code) {
+    const v = state.barcodeDict[code];
+    if (v == null) return null;
+    if (typeof v === 'string') return { code, name: v, retail: null, unit: '条', local: true };
+    return { code, name: v.brand || '', retail: v.price == null || v.price === '' ? null : Number(v.price), unit: v.unit || '条', local: true };
+  }
+  // 按完整条码或后 6 位查找：价格目录优先，其次本地条码库
+  function lookupCode(input) {
+    const d = String(input || '').replace(/\D/g, '');
+    if (d.length < 6) return [];
+    const out = []; const seen = new Set();
+    const add = x => { if (x && !seen.has(x.code)) { seen.add(x.code); out.push(x); } };
+    const map = catalogMap();
+    if (d.length === 6) {
+      map.forEach(it => { if (it.code.endsWith(d)) add(it); });
+      Object.keys(state.barcodeDict).forEach(k => { if (k.endsWith(d)) add(dictEntry(k)); });
+    } else {
+      add(map.get(d));
+      add(dictEntry(d));
+    }
+    return out;
+  }
+  function lookupName(name) {
+    const n = String(name || '').trim();
+    if (!n) return null;
+    for (const it of activeCatalog().items) if (it.name === n) return it;
+    return null;
+  }
+  // 把登记数量折算成价格单位（条或支）；无法折算时返回 null
+  function toPriceQty(qty, unit, priceUnit) {
+    const q = Number(qty);
+    if (!Number.isFinite(q)) return null;
+    unit = unit || '条'; priceUnit = priceUnit || '条';
+    if (unit === priceUnit) return q;
+    // 卷烟按条计价时，包、支按每条 10 包、每包 20 支折算；雪茄按支计价，各品规每盒支数不同，不做折算
+    if (priceUnit === '条' && CAT_UNIT_TIAO[unit]) return Math.round(q * CAT_UNIT_TIAO[unit] * 1000) / 1000;
+    return null;
+  }
+  function money(n) { return Math.round(n * 100) / 100; }
+  function fmtMoney(n) { return money(n).toLocaleString('zh-CN', { maximumFractionDigits: 2 }); }
+  // 单条查获记录的核价结果
+  function priceLine(s) {
+    const hasPrice = s.price !== '' && s.price != null && Number.isFinite(Number(s.price)) && Number(s.price) > 0;
+    const pUnit = s.priceUnit || '条';
+    const pq = toPriceQty(s.qty, s.unit, pUnit);
+    const notes = [];
+    if (pq != null && (s.unit || '条') !== pUnit) notes.push('按' + s.qty + (s.unit || '条') + '折算');
+    if (pq == null && Number(s.qty) > 0) notes.push('单位"' + (s.unit || '') + '"无法自动折算为' + pUnit + '，请人工核对');
+    if (s.priceExit) notes.push('退出目录品规');
+    if (hasPrice && s.priceSource === 'manual') notes.push('价格手工录入');
+    if (!hasPrice) notes.push('未查到价格，待核');
+    return { hasPrice, price: hasPrice ? Number(s.price) : null, pUnit, pq, amount: hasPrice && pq != null ? money(pq * Number(s.price)) : null, notes };
+  }
+  function caseAmount(items) {
+    let total = 0, priced = 0;
+    items.forEach(s => { const p = priceLine(s); if (p.amount != null) { total += p.amount; priced++; } });
+    return { total: money(total), priced, count: items.length };
+  }
+  const DEFAULT_CAUSE = {
+    't-transport': '涉嫌无烟草专卖品准运证运输烟草专卖品',
+    't-unlicensed': '涉嫌无烟草专卖零售许可证经营烟草制品零售业务',
+    't-fake': '涉嫌销售假冒注册商标的卷烟',
+    't-factory': '涉嫌生产、销售假冒注册商标的卷烟'
+  };
+  function caseCause(c) { return (c.cause || '').trim() || (c.template && c.template.cause) || DEFAULT_CAUSE[c.typeId] || ''; }
+  function priceBasisText(c, lines) {
+    const custom = (state.settings.priceBasis || '').trim();
+    const cat = activeCatalog();
+    const usedCats = [...new Set(c.seizedItems.filter(s => s.priceSource === 'catalog' && !s.priceExit && s.priceCat).map(s => s.priceCat))];
+    let text = custom;
+    if (!text) {
+      const names = usedCats.map(k => '《' + cat.version + '湖南省' + k + '品牌价格目录》');
+      if (c.seizedItems.some(s => s.priceSource === 'catalog' && s.priceExit)) names.push('《退出' + cat.version + '湖南省国产卷烟价格目录》');
+      text = names.length ? '根据' + (cat.issued ? cat.issued.replace(/\s*印发$/, '印发的') : '') + names.join('、') + '所列建议零售价核定。' : '';
+    }
+    const manual = [], missing = [];
+    lines.forEach((p, i) => { if (!p.hasPrice) missing.push(i + 1); else if (c.seizedItems[i].priceSource === 'manual') manual.push(i + 1); });
+    if (manual.length) text += '第' + manual.join('、') + '项价格为手工录入，须另附定价依据。';
+    if (missing.length) text += '第' + missing.join('、') + '项未查到价格，待核定。';
+    return text;
+  }
+
+  /* ---------- 核价表 xlsx（按"涉案烟草专卖品核价表"模板版式生成） ---------- */
+  function xmlEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ''); }
+  function colName(i) { return String.fromCharCode(65 + i); }
+  function buildPriceSheetData(c) {
+    const lines = c.seizedItems.map(priceLine);
+    const units = [...new Set(lines.map(p => p.pUnit))];
+    const headUnit = units.includes('条') || !units.length ? '条' : units[0];
+    const qtyHead = '数量(' + headUnit + ')';
+    const d = c.filingDate ? new Date(c.filingDate + 'T00:00:00') : null;
+    const dateText = d && !isNaN(d) ? ' ' + d.getFullYear() + ' 年 ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日' : '      年    月    日';
+    const numText = /^临-/.test(c.number) ? '             ' : c.number;
+    const org = (state.settings.priceOrg || '').trim() || '桂阳县烟草专卖局';
+    const rows = c.seizedItems.map((s, i) => {
+      const p = lines[i];
+      const notes = p.notes.slice();
+      if (p.pUnit !== headUnit) notes.unshift('单位：' + p.pUnit);
+      return { no: i + 1, name: s.brand, qty: p.pq, price: p.price, amount: p.amount, note: notes.join('；'), code: s.barcode || '' };
+    });
+    const other = rows.filter((x, i) => lines[i].pUnit !== headUnit && x.qty != null);
+    const otherQty = Math.round(other.reduce((a, r) => a + r.qty, 0) * 1000) / 1000;
+    const otherUnit = other.length ? lines.find(l => l.pUnit !== headUnit).pUnit : '';
+    return {
+      org, title: org + '\n涉案烟草专卖品核价表',
+      sentence: '    ' + org + '于' + dateText + '立案（立案编号：' + numText + '）的 ' + (caseCause(c) || '            ') + ' 案件中，涉案物品价格如下：',
+      qtyHead, rows,
+      headUnit,
+      totalQty: Math.round(rows.filter((x, i) => lines[i].pUnit === headUnit).reduce((a, r) => a + (r.qty || 0), 0) * 1000) / 1000,
+      mixed: other.length > 0,
+      totalNote: other.length ? '另有 ' + otherQty + ' ' + otherUnit + '未计入' : '',
+      totalAmount: money(rows.reduce((a, r) => a + (r.amount || 0), 0)),
+      basis: priceBasisText(c, lines)
+    };
+  }
+  async function buildPriceSheetXlsx(c) {
+    const D = buildPriceSheetData(c);
+    // 样式：0 默认 1 标题 2 说明文字 3 表格 4 价格依据 5 经办人 6 落款 7 条码列
+    const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<fonts count="4"><font><sz val="11"/><name val="宋体"/><charset val="134"/></font><font><sz val="18"/><name val="宋体"/><charset val="134"/></font><font><sz val="12"/><name val="宋体"/><charset val="134"/></font><font><sz val="11"/><name val="宋体"/><charset val="134"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '</cellXfs><cellStyles count="1"><cellStyle name="常规" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    const rowsXml = []; const merges = [];
+    const cell = (ref, s, v, f) => {
+      if (f) return '<c r="' + ref + '" s="' + s + '"><f>' + f + '</f>' + (v == null ? '' : '<v>' + v + '</v>') + '</c>';
+      if (v == null || v === '') return '<c r="' + ref + '" s="' + s + '"/>';
+      if (typeof v === 'number') return '<c r="' + ref + '" s="' + s + '"><v>' + v + '</v></c>';
+      return '<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + '</t></is></c>';
+    };
+    const row = (r, ht, cells) => rowsXml.push('<row r="' + r + '" ht="' + ht + '" customHeight="1">' + cells.join('') + '</row>');
+    const blanks = (r, s, from, to) => { const a = []; for (let i = from; i <= to; i++) a.push(cell(colName(i) + r, s)); return a; };
+    row(1, 30, [cell('A1', 1, D.title)].concat(blanks(1, 1, 1, 5))); row(2, 24, blanks(2, 1, 0, 5)); merges.push('A1:F2');
+    row(3, 55, [cell('A3', 2, D.sentence)].concat(blanks(3, 2, 1, 5))); merges.push('A3:F3');
+    row(4, 33, [cell('A4', 3, '序号'), cell('B4', 3, '品种规格'), cell('C4', 3, D.qtyHead), cell('D4', 3, '单价（元）'), cell('E4', 3, '合计(元)'), cell('F4', 3, '备注'), cell('H4', 7, '条码')]);
+    let r = 5;
+    D.rows.forEach(x => {
+      row(r, 28, [cell('A' + r, 3, x.no), cell('B' + r, 3, x.name), cell('C' + r, 3, x.qty), cell('D' + r, 3, x.price),
+        x.price != null && x.qty != null ? cell('E' + r, 3, x.amount, 'C' + r + '*D' + r) : cell('E' + r, 3, null), cell('F' + r, 3, x.note), cell('H' + r, 7, x.code)]);
+      r++;
+    });
+    const first = 5, last = Math.max(5, r - 1);
+    row(r, 28, [cell('A' + r, 3, '合计'), cell('B' + r, 3), D.mixed ? cell('C' + r, 3, D.totalQty) : cell('C' + r, 3, D.totalQty, 'SUM(C' + first + ':C' + last + ')'),
+      cell('D' + r, 3), cell('E' + r, 3, D.totalAmount, 'SUM(E' + first + ':E' + last + ')'), cell('F' + r, 3, D.totalNote)]); r++;
+    row(r, 66, [cell('A' + r, 3, '价格依据'), cell('B' + r, 4, D.basis)].concat(blanks(r, 4, 2, 5))); merges.push('B' + r + ':F' + r); r++;
+    row(r, 13, blanks(r, 5, 0, 5)); merges.push('A' + r + ':F' + r); r++;
+    row(r, 56, [cell('A' + r, 5, '经办人：')].concat(blanks(r, 5, 1, 5))); merges.push('A' + r + ':F' + r); r++;
+    row(r, 60, [cell('A' + r, 6, '(印 章)　　　　\n　年　　月　　日　　')].concat(blanks(r, 6, 1, 5))); merges.push('A' + r + ':F' + r);
+    const lastRow = r;
+    const widths = [6.25, 30.25, 11.5, 10.63, 12.13, 22, 3, 18];
+    const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:H' + lastRow + '"/>' +
+      '<sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="13.5"/>' +
+      '<cols>' + widths.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>' +
+      '<sheetData>' + rowsXml.join('') + '</sheetData>' +
+      '<mergeCells count="' + merges.length + '">' + merges.map(m => '<mergeCell ref="' + m + '"/>').join('') + '</mergeCells>' +
+      '<printOptions horizontalCentered="1"/><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>' +
+      '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/></worksheet>';
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+    zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    zip.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="核价单" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">核价单!$A$1:$F$' + lastRow + '</definedName></definedNames><calcPr calcId="0" fullCalcOnLoad="1"/></workbook>');
+    zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    zip.file('xl/styles.xml', styles);
+    zip.file('xl/worksheets/sheet1.xml', sheet);
+    return { data: D, bytes: await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }) };
+  }
+  function priceSheetName(c) { return safeName(c.number) + '_涉案烟草专卖品核价表.xlsx'; }
+
   /* ========================= 渲染：框架 ========================= */
   function topbar(title, back) {
     return '<header class="topbar">' +
@@ -814,6 +1025,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       case 'templates': html = viewTemplates(); break;
       case 'templateEdit': html = viewTemplateEdit(); break;
       case 'barcodes': html = viewBarcodes(); break;
+      case 'prices': html = viewPrices(); break;
       case 'backup': html = viewBackup(); break;
       case 'me': html = viewMe(); break;
       default: html = viewCases();
@@ -1011,16 +1223,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     } else {
       html += c.seizedItems.map((s, i) => {
         const valid = seizedItemValid(s);
-        return '<div class="list-item' + (valid ? '' : ' invalid') + '">' +
-          '<div class="mini">' + (s.thumb ? '<img src="' + s.thumb + '" alt="" data-action="view-photo" data-kind="seized" data-item="' + esc(s.id) + '">' : '') + '</div>' +
+        const p = priceLine(s);
+        const priceText = p.hasPrice ? '单价 ' + p.price + ' 元/' + p.pUnit + (p.amount != null ? ' · 小计 <strong>' + fmtMoney(p.amount) + '</strong> 元' : '') + (s.priceSource === 'manual' ? ' <span class="badge warn">手工价</span>' : '') + (s.priceExit ? ' <span class="badge warn">退出目录</span>' : '')
+          : '<span class="warn-text">未核价</span>';
+        return '<div class="list-item seized-item' + (valid ? '' : ' invalid') + '">' +
+          (s.thumb ? '<div class="mini"><img src="' + s.thumb + '" alt="" data-action="view-photo" data-kind="seized" data-item="' + esc(s.id) + '"></div>' : '') +
           '<div class="grow"><div><strong>' + (i + 1) + '. ' + (s.brand ? esc(s.brand) : '<span class="danger-text">品规未填</span>') + '</strong> ' +
           (Number(s.qty) > 0 ? esc(s.qty) + ' ' + esc(s.unit || '条') : '<span class="danger-text">数量未填</span>') + '</div>' +
+          '<div class="small">' + priceText + '</div>' +
+          (p.pq == null && Number(s.qty) > 0 && p.hasPrice ? '<div class="warn-text small">' + esc(p.notes[0] || '') + '</div>' : '') +
           '<div class="muted small break">条码：' + (s.barcode ? esc(s.barcode) : '—') + '</div>' +
           (valid ? '' : '<div class="danger-text small">信息不完整，打包前需补全</div>') + '</div>' +
-          '<div class="row"><button type="button" class="btn btn-sm" data-action="seized-edit" data-id="' + esc(s.id) + '">编辑</button>' +
-          '<button type="button" class="btn btn-sm btn-danger-outline" data-action="seized-del" data-id="' + esc(s.id) + '">删除</button></div></div>';
+          '<button type="button" class="btn btn-sm" data-action="seized-edit" data-id="' + esc(s.id) + '">编辑</button></div>';
       }).join('');
-      html += '<div class="small" style="margin-top:8px">合计：' + (seizedSummary(c.seizedItems) || '—') + '</div>';
+      const amt = caseAmount(c.seizedItems);
+      html += '<div class="seized-total"><div>数量合计：' + (seizedSummary(c.seizedItems) || '—') + '</div>' +
+        '<div>涉案金额：<strong>' + fmtMoney(amt.total) + '</strong> 元' + (amt.priced < amt.count ? '<span class="warn-text small">（' + (amt.count - amt.priced) + ' 条未核价）</span>' : '') + '</div></div>' +
+        '<button type="button" class="btn btn-block" data-action="price-sheet" style="margin-top:8px">生成核价表（Excel）</button>';
     }
     return html + '</div>';
   }
@@ -1038,6 +1257,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (r.ok) {
       const canShare = state.lastPackage && navigator.canShare && (() => { try { return navigator.canShare({ files: [state.lastPackage.file] }); } catch (e) { return false; } })();
       return '<div class="card alert-ok" id="pack-result"><strong>证据包已生成</strong><div class="small break">' + esc(r.filename) + '（' + fmtSize(r.size) + '，照片 ' + r.photos + ' 张）</div>' +
+        (r.sheet ? '<div class="small break">含核价表：' + esc(r.sheet) + '（涉案金额 ' + fmtMoney(r.amount) + ' 元）</div>' : '') +
+        (r.unpriced ? '<div class="small warn-text">提示：有 ' + r.unpriced + ' 条查获卷烟未查到价格，核价表中已标"待核"。</div>' : '') +
         (r.optionalMissing ? '<div class="small warn-text">提示：有 ' + r.optionalMissing + ' 个选拍项未拍（不影响打包）。</div>' : '') +
         '<div class="btn-row"><button type="button" class="btn btn-sm" data-action="download-again">再次下载</button>' +
         (canShare ? '<button type="button" class="btn btn-sm btn-primary" data-action="share-package">发送/分享</button>' : '') + '</div></div>';
@@ -1054,7 +1275,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return topbar('管理') + '<div class="content">' +
       m('users', '用户管理', '添加稽查人员、重置 PIN、调整角色（共 ' + state.users.length + ' 人）') +
       m('templates', '案件模板', '维护各类案件的必拍 / 选拍清单（共 ' + state.templates.length + ' 类）') +
-      m('barcodes', '条码库', '条码与品规对照，扫码后自动带出品规（' + Object.keys(state.barcodeDict).length + ' 条）') +
+      m('prices', '价格目录与核价表', (activeCatalog().version || '') + '价格目录 ' + activeCatalog().items.length + ' 个品规；核价表单位名称、价格依据') +
+      m('barcodes', '本地条码库', '价格目录以外的条码，录入一次后自动带出（' + Object.keys(state.barcodeDict).length + ' 条）') +
       m('backup', '数据备份与还原', '导出 / 导入全部数据，重建案件索引') +
       '<div class="card"><h3>系统设置</h3><label class="check"><input type="checkbox" data-setting="watermark"' + (state.settings.watermark ? ' checked' : '') + '>照片加水印（案件编号、项目、时间、采集人、位置）</label>' +
       '<p class="muted small">水印直接绘制在照片上；关闭后新拍照片不加水印，已拍照片不变。</p></div></div>' + tabbar();
@@ -1095,17 +1317,105 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<button type="button" class="btn btn-sm" data-action="tpl-add-item" data-ci="' + ci + '">＋ 拍摄项目</button></div>').join('');
     return topbar(t.isNew ? '新建模板' : '编辑模板', 'templates') + '<div class="content"><div class="card">' +
       '<label class="field"><span>案件类型名称</span><input type="text" data-tpl="name" maxlength="20" value="' + esc(t.name) + '"></label>' +
-      '<label class="check"><input type="checkbox" data-tpl="seized"' + (t.requiresSeizedItems ? ' checked' : '') + '>本类案件须登记查获卷烟（品规+数量）</label></div>' +
+      '<label class="check"><input type="checkbox" data-tpl="seized"' + (t.requiresSeizedItems ? ' checked' : '') + '>本类案件须登记查获卷烟（品规+数量）</label>' +
+      '<label class="field" style="margin-top:8px"><span>案由（用于核价表）</span><input type="text" data-tpl="cause" maxlength="60" value="' + esc(t.cause != null ? t.cause : (DEFAULT_CAUSE[t.id] || '')) + '"></label></div>' +
       cats + '<button type="button" class="btn btn-block" data-action="tpl-add-cat">＋ 添加类别</button>' +
       '<div class="btn-row"><button type="button" class="btn" data-action="back" data-to="templates">取消</button><button type="button" class="btn btn-primary" data-action="tpl-save">保存模板</button></div></div>';
   }
   function viewBarcodes() {
     const codes = Object.keys(state.barcodeDict).sort();
-    return topbar('条码库', 'admin') + '<div class="content"><div class="card small muted">登记查获卷烟时，填写了条码和品规的记录会自动加入条码库；下次扫到同一条码会自动带出品规。条码与品规的对应请以实物和官方信息为准。</div>' +
+    return topbar('本地条码库', 'admin') + '<div class="content"><div class="card small muted">价格目录里没有的品规（如外省卷烟），登记时填写了条码、品规和单价后会自动记入这里；下次输入同一条码或后 6 位即可带出。价格目录中已有的条码以价格目录为准。</div>' +
       '<form class="card" data-form="addBarcode"><h3>手工添加</h3><label class="field"><span>条码</span><input type="text" name="code" inputmode="numeric" maxlength="40" required></label>' +
-      '<label class="field"><span>品规</span><input type="text" name="brand" maxlength="40" required></label><button type="submit" class="btn btn-primary btn-block">保存</button></form>' +
-      '<div class="card">' + (codes.length ? codes.map(code => '<div class="list-item"><div class="grow"><div class="mono break">' + esc(code) + '</div><div>' + esc(state.barcodeDict[code]) + '</div></div>' +
-        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="barcode-del" data-code="' + esc(code) + '">删除</button></div>').join('') : '<div class="muted small">暂无记录</div>') + '</div></div>';
+      '<label class="field"><span>品规</span><input type="text" name="brand" maxlength="40" required></label>' +
+      '<div class="row nowrap"><label class="field grow"><span>单价（元，可不填）</span><input type="number" name="price" inputmode="decimal" min="0" step="any"></label>' +
+      '<label class="field" style="width:84px"><span>计价单位</span><select name="unit"><option>条</option><option>支</option></select></label></div>' +
+      '<button type="submit" class="btn btn-primary btn-block">保存</button></form>' +
+      '<div class="card">' + (codes.length ? codes.map(code => { const e = dictEntry(code); return '<div class="list-item"><div class="grow"><div class="mono break">' + esc(code) + '</div><div>' + esc(e.name) + (e.retail != null ? '　' + e.retail + ' 元/' + esc(e.unit) : '　<span class="muted small">无单价</span>') + '</div></div>' +
+        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="barcode-del" data-code="' + esc(code) + '">删除</button></div>'; }).join('') : '<div class="muted small">暂无记录</div>') + '</div></div>';
+  }
+  function viewPrices() {
+    const cat = activeCatalog();
+    const by = {};
+    cat.items.forEach(i => { const k = (i.cat || '其他') + (i.exit ? '（退出目录）' : ''); by[k] = (by[k] || 0) + 1; });
+    return topbar('价格目录与核价表', 'admin') + '<div class="content">' +
+      '<div class="card"><h3>当前价格目录</h3><div class="kv"><div>目录</div><div>' + esc(cat.title || '（无）') + '</div>' +
+      '<div>印发</div><div>' + esc(cat.issued || '—') + '</div><div>来源</div><div>' + (state.customCatalog ? '管理员导入（' + esc(state.customCatalog.importedBy || '') + ' ' + fmtDate(state.customCatalog.importedAt) + '）' : '系统内置') + '</div>' +
+      '<div>品规数</div><div>' + cat.items.length + '（' + Object.keys(by).map(k => k + ' ' + by[k]).join('，') + '）</div></div>' +
+      '<p class="small muted">登记查获卷烟时，输入条码后 6 位或完整条码即自动带出品规和建议零售价。</p></div>' +
+      '<div class="card"><h3>价格查询</h3><input type="search" data-price-q placeholder="输入条码后 6 位 / 完整条码 / 品名"><div id="price-results" style="margin-top:8px"></div></div>' +
+      '<form class="card" data-form="priceSettings"><h3>核价表设置</h3>' +
+      '<label class="field"><span>核价单位名称（核价表标题和正文使用）</span><input type="text" name="org" maxlength="30" value="' + esc(state.settings.priceOrg || '') + '" placeholder="桂阳县烟草专卖局"></label>' +
+      '<label class="field"><span>价格依据（留空则按所用价格目录自动生成）</span><textarea name="basis" maxlength="300" placeholder="' + esc('根据' + (cat.issued ? cat.issued.replace(/\s*印发$/, '印发的') : '') + '《' + cat.version + '湖南省国产卷烟品牌价格目录》所列建议零售价核定。') + '">' + esc(state.settings.priceBasis || '') + '</textarea></label>' +
+      '<button type="submit" class="btn btn-primary btn-block">保存设置</button></form>' +
+      '<div class="card"><h3>更新价格目录</h3><p class="small">每半年省局发布新目录后：把目录表格另存为 CSV（第一行为表头，需包含"条包条形码""规格名称""建议零售价""单位"列），在此导入，将替换当前目录。已登记的案件保留原价格不变。</p>' +
+      '<button type="button" class="btn btn-block" data-action="catalog-import">导入价格目录（CSV）</button>' +
+      (state.customCatalog ? '<button type="button" class="btn btn-block btn-danger-outline" data-action="catalog-reset" style="margin-top:8px">恢复系统内置目录</button>' : '') + '</div>' +
+      '<button type="button" class="menu-item" data-action="goto" data-view="barcodes"><span>本地条码库<span class="desc">价格目录以外的条码（' + Object.keys(state.barcodeDict).length + ' 条）</span></span><span>›</span></button></div>';
+  }
+  function renderPriceResults(q) {
+    const box = $('#price-results'); if (!box) return;
+    q = String(q || '').trim();
+    if (!q) { box.innerHTML = ''; return; }
+    let list = /^\d{6,}$/.test(q) ? lookupCode(q) : activeCatalog().items.filter(i => i.name.includes(q));
+    const more = list.length > 30; list = list.slice(0, 30);
+    box.innerHTML = list.length ? list.map(i => '<div class="list-item"><div class="grow"><div><strong>' + esc(i.name) + '</strong>　' + (i.retail != null ? i.retail + ' 元/' + esc(i.unit) : '无单价') + (i.exit ? ' <span class="badge warn">退出目录</span>' : '') + (i.local ? ' <span class="badge">本地条码库</span>' : '') + '</div>' +
+      '<div class="muted small mono">' + esc(i.code) + (i.cat ? ' · ' + esc(i.cat) : '') + (i.maker ? ' · ' + esc(i.maker) : '') + '</div></div></div>').join('') + (more ? '<div class="small muted">仅显示前 30 条</div>' : '') : '<div class="small muted">没有找到</div>';
+  }
+  async function downloadPriceSheet() {
+    const c = state.caseData;
+    if (!c || !c.seizedItems.length) { toast('尚未登记查获卷烟', 'warn'); return; }
+    if (typeof JSZip === 'undefined') { toast('打包组件（JSZip）未加载，无法生成核价表', 'error'); return; }
+    const x = await buildPriceSheetXlsx(c);
+    downloadBlob(new Blob([x.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), priceSheetName(c));
+    const amt = caseAmount(c.seizedItems);
+    toast('已生成核价表：涉案金额 ' + fmtMoney(amt.total) + ' 元' + (amt.priced < amt.count ? '；' + (amt.count - amt.priced) + ' 条未查到价格，表中标"待核"' : ''), amt.priced < amt.count ? 'warn' : 'ok', 4000);
+  }
+  // 解析价格目录 CSV（支持 UTF-8 与 Excel 默认的 GBK 编码）
+  function parseCsv(text) {
+    const rows = []; let row = [], cur = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cur); cur = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+    if (cur || row.length) { row.push(cur); rows.push(row); }
+    return rows.map(r => r.map(x => x.trim())).filter(r => r.some(Boolean));
+  }
+  function catalogFromCsv(text) {
+    const rows = parseCsv(text);
+    const hi = rows.findIndex(r => r.some(x => /条码|条形码/.test(x)) && r.some(x => /零售价/.test(x)));
+    if (hi < 0) throw new Error('找不到表头：需要包含"条码/条包条形码"和"建议零售价"列');
+    const h = rows[hi];
+    const col = re => h.findIndex(x => re.test(x));
+    const ci = { code: col(/条码|条形码/), name: col(/规格名称|品规|品种规格|名称/), retail: col(/零售价/), unit: col(/^单位/), maker: col(/工业公司|生产/), cat: col(/目录|类别/) };
+    if (ci.name < 0) throw new Error('找不到"规格名称"列');
+    const items = []; const seen = new Set(); const bad = [];
+    rows.slice(hi + 1).forEach((r, i) => {
+      const code = (r[ci.code] || '').replace(/\D/g, '');
+      const retail = Number(String(r[ci.retail] || '').replace(/[,，元\s]/g, ''));
+      if (!/^\d{8,14}$/.test(code) || !r[ci.name] || !(retail > 0)) { if (r.join('').trim() && !/序号/.test(r.join(''))) bad.push(hi + i + 2); return; }
+      if (seen.has(code)) return;
+      seen.add(code);
+      items.push({ code, name: r[ci.name], maker: ci.maker >= 0 ? r[ci.maker] || '' : '', cat: ci.cat >= 0 ? r[ci.cat] || '' : '', cls: '', retail, unit: ci.unit >= 0 && /支/.test(r[ci.unit] || '') ? '支' : '条' });
+    });
+    return { items, bad };
+  }
+  async function importCatalogFile(file) {
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder('utf-8').decode(buf);
+    if (text.includes('�')) { try { text = new TextDecoder('gbk').decode(buf); } catch (e) { /* 保持 UTF-8 */ } }
+    let r;
+    try { r = catalogFromCsv(text.replace(/^﻿/, '')); } catch (e) { toast('导入失败：' + e.message, 'error', 6000); return; }
+    if (!r.items.length) { toast('导入失败：没有读到有效的品规行', 'error'); return; }
+    const version = await promptDialog('价格目录名称', '例如：2026年上半年湖南省卷烟品牌价格目录', '');
+    if (version === false || version == null) return;
+    const ok = await confirmDialog('读到 ' + r.items.length + ' 个品规' + (r.bad.length ? '，另有 ' + r.bad.length + ' 行格式不对已跳过（第 ' + r.bad.slice(0, 8).join('、') + (r.bad.length > 8 ? '…' : '') + ' 行）' : '') + '。\n导入后将替换当前价格目录，之后登记的卷烟按新价格带出；已登记的不受影响。', { title: '确认导入', okText: '导入' });
+    if (!ok) return;
+    const cat = { title: version.trim() || file.name, version: version.trim(), issued: '', items: r.items, importedAt: Date.now(), importedBy: state.user.name };
+    if (await setJSON(K.priceCatalog, cat, true)) { state.customCatalog = cat; toast('已导入价格目录：' + r.items.length + ' 个品规', 'ok'); render(); }
   }
   function viewBackup() {
     return topbar('数据备份与还原', 'admin') + '<div class="content">' + storageNotice() +
@@ -1137,36 +1447,136 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<li>"必拍项缺失拦截"只保证<strong>不会漏拍</strong>，不能证明<strong>拍得对、拍得清</strong>，照片内容仍需人工审核。拍照质量提示（偏暗/过曝/模糊）只是参考，可能误报或漏报。</li>' +
       '<li>条码识别依赖浏览器的 BarcodeDetector 功能（部分安卓 Chrome 支持，iPhone 一般不支持），不支持时请手工输入条码。</li>' +
       '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
-      '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li></ol></div></div>' + tabbar();
+      '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li>' +
+      '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），核价表须由经办人核对后签字盖章；包、支按每条 10 包、每包 20 支折算。</li></ol></div></div>' + tabbar();
   }
 
   /* ========================= 弹窗：查获卷烟 ========================= */
-  function renderSeizedModal() {
-    const s = state.seizedEdit;
-    const chk = s.barcode ? checkGtin(s.barcode) : null;
-    const brands = [...new Set(Object.values(state.barcodeDict))].sort();
-    showModal('<h3>' + (s.id ? '编辑' : '登记') + '查获卷烟</h3><form data-form="seized">' +
-      '<label class="field"><span>条码（可扫码或手工输入）</span><div class="row nowrap"><input type="text" name="barcode" class="grow" inputmode="numeric" maxlength="40" value="' + esc(s.barcode) + '" placeholder="商品条码">' +
+  function blankSeized(unit) {
+    return { id: null, barcode: '', matchedCode: '', matched: '', brand: '', qty: '', unit: unit || '条', price: '', priceUnit: '条', priceSource: '', priceCat: '', priceExit: false, catalogPrice: null, thumb: '', barcodeMsg: '', cands: null };
+  }
+  function seizedFromItem(s) {
+    return Object.assign(blankSeized(s.unit), {
+      id: s.id, barcode: s.barcode || '', matchedCode: s.barcode || '', brand: s.brand || '', qty: s.qty === '' || s.qty == null ? '' : String(s.qty),
+      price: s.price == null ? '' : String(s.price), priceUnit: s.priceUnit || '条', priceSource: s.priceSource || '', priceCat: s.priceCat || '',
+      priceExit: !!s.priceExit, catalogPrice: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.price : null, matched: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.priceSource : '', thumb: s.thumb || ''
+    });
+  }
+  function matchBoxHtml(s) {
+    if (s.cands && s.cands.length > 1) {
+      return '<div class="match-list"><div class="small muted">找到 ' + s.cands.length + ' 个品规，请选择：</div>' + s.cands.map(m =>
+        '<button type="button" class="btn btn-sm btn-block match-pick" data-action="pick-cand" data-code="' + esc(m.code) + '">' + esc(m.name) + '　' + (m.retail != null ? m.retail + ' 元/' + m.unit : '无价格') + '<span class="muted small">　…' + esc(m.code.slice(-6)) + '</span></button>').join('') + '</div>';
+    }
+    const chk = s.barcode ? checkGtin(s.barcode.replace(/\D/g, '')) : null;
+    if (s.matched) {
+      return '<div class="match ok"><strong>' + esc(s.brand) + '</strong>　' + (s.catalogPrice != null ? '建议零售价 <strong>' + s.catalogPrice + '</strong> 元/' + esc(s.priceUnit) : '<span class="warn-text">无单价，请填写</span>') +
+        '<div class="small muted">' + (s.matched === 'catalog' ? '价格目录' + (s.priceCat ? ' · ' + esc(s.priceCat) : '') : '本地条码库') + ' · 条码 ' + esc(s.matchedCode) + (s.priceExit ? ' · <span class="warn-text">退出目录品规</span>' : '') + '</div></div>';
+    }
+    if (chk === false) return '<div class="match warn">条码校验位不符，请核对是否输错</div>';
+    if (s.barcodeMsg) return '<div class="match">' + esc(s.barcodeMsg) + '</div>';
+    return '<div class="small muted">输入条码后 6 位即可自动带出品规和建议零售价</div>';
+  }
+  function subtotalText(s) {
+    const p = priceLine({ qty: s.qty, unit: s.unit, price: s.price, priceUnit: s.priceUnit, priceSource: s.priceSource });
+    if (!(Number(s.qty) > 0)) return '小计：填写数量后自动计算';
+    if (!p.hasPrice) return '小计：未填写单价（可保存，核价表中标"待核"）';
+    if (p.pq == null) return '小计：单位"' + s.unit + '"无法折算为' + p.pUnit + '，请改用' + p.pUnit;
+    return '小计：' + (s.unit !== p.pUnit ? s.qty + s.unit + ' = ' : '') + p.pq + ' ' + p.pUnit + ' × ' + p.price + ' 元 = <strong>' + fmtMoney(p.amount) + ' 元</strong>';
+  }
+  function renderSeizedModal(focus) {
+    const s = state.seizedEdit; const c = state.caseData;
+    const names = new Set(activeCatalog().items.map(i => i.name));
+    Object.keys(state.barcodeDict).forEach(k => { const e = dictEntry(k); if (e && e.name) names.add(e.name); });
+    const amt = c ? caseAmount(c.seizedItems) : null;
+    showModal('<h3>' + (s.id ? '编辑' : '登记') + '查获卷烟</h3>' +
+      (c && c.seizedItems.length && !s.id ? '<div class="small muted" style="margin:-4px 0 8px">本案已登记 ' + c.seizedItems.length + ' 条' + (amt.priced ? '，涉案金额 ' + fmtMoney(amt.total) + ' 元' : '') + '</div>' : '') +
+      '<form data-form="seized" autocomplete="off">' +
+      '<label class="field"><span>条码（输入后 6 位即可，或点"扫码"）</span><div class="row nowrap"><input type="text" name="barcode" class="grow code-input" inputmode="numeric" enterkeyhint="next" maxlength="40" value="' + esc(s.barcode) + '" placeholder="如：075015">' +
       '<button type="button" class="btn btn-sm btn-primary" data-action="scan-barcode">扫码</button></div></label>' +
-      '<div id="barcode-msg" class="small ' + (chk === false ? 'warn-text' : 'muted') + '" style="margin:-6px 0 10px">' + (chk === false ? '条码校验位不符，请核对是否输错' : (s.barcodeMsg ? esc(s.barcodeMsg) : '')) + '</div>' +
-      '<label class="field"><span>品规 *</span><input type="text" name="brand" maxlength="40" list="brand-list" value="' + esc(s.brand) + '" placeholder="如：某品牌（硬）"><datalist id="brand-list">' + brands.map(b => '<option value="' + esc(b) + '">').join('') + '</datalist></label>' +
-      '<div class="row nowrap"><label class="field grow"><span>数量 *</span><input type="number" name="qty" inputmode="decimal" min="0" step="any" value="' + esc(s.qty) + '"></label>' +
-      '<label class="field" style="width:96px"><span>单位</span><select name="unit">' + UNITS.map(u => '<option' + (s.unit === u ? ' selected' : '') + '>' + u + '</option>').join('') + '</select></label></div>' +
+      '<div id="barcode-msg" class="match-box">' + matchBoxHtml(s) + '</div>' +
+      '<label class="field"><span>品规 *（也可输入品名搜索）</span><input type="text" name="brand" maxlength="40" list="brand-list" value="' + esc(s.brand) + '" placeholder="如：中华（硬）"><datalist id="brand-list">' + [...names].sort().map(b => '<option value="' + esc(b) + '">').join('') + '</datalist></label>' +
+      '<div class="row nowrap" style="align-items:flex-end"><label class="field grow"><span>数量 *</span><div class="stepper"><button type="button" class="btn" data-action="qty-step" data-d="-1" aria-label="减少">−</button>' +
+      '<input type="number" name="qty" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="' + esc(s.qty) + '"><button type="button" class="btn" data-action="qty-step" data-d="1" aria-label="增加">＋</button></div></label>' +
+      '<label class="field" style="width:84px"><span>单位</span><select name="unit">' + UNITS.map(u => '<option' + (s.unit === u ? ' selected' : '') + '>' + u + '</option>').join('') + '</select></label></div>' +
+      '<div class="chips" style="margin:-4px 0 12px">' + [1, 5, 10, 20, 50].map(v => '<button type="button" class="btn btn-sm" data-action="qty-set" data-v="' + v + '">' + v + '</button>').join('') + '</div>' +
+      '<label class="field"><span>单价（元/<span id="price-unit">' + esc(s.priceUnit) + '</span>，建议零售价）</span><input type="number" name="price" inputmode="decimal" min="0" step="any" value="' + esc(s.price) + '" placeholder="查到后自动填入"></label>' +
+      '<div id="subtotal" class="subtotal">' + subtotalText(s) + '</div>' +
       '<div class="field"><span class="muted small">照片（可选）</span><div class="row nowrap">' +
       '<div class="mini" style="width:96px;height:72px;border-radius:6px;overflow:hidden;background:#eef1ef">' + (s.thumb ? '<img src="' + s.thumb + '" alt="" style="width:100%;height:100%;object-fit:cover">' : '') + '</div>' +
       '<button type="button" class="btn btn-sm" data-action="capture" data-src="camera" data-kind="seizedPhoto">拍照</button>' +
       '<button type="button" class="btn btn-sm" data-action="capture" data-src="album" data-kind="seizedPhoto">相册</button></div></div>' +
       '<div id="seized-msg" class="danger-text small"></div>' +
-      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">保存</button></div></form>', 'seized');
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button>' +
+      (s.id ? '<button type="button" class="btn btn-danger-outline" data-action="seized-del" data-id="' + esc(s.id) + '">删除</button>' : '<button type="button" class="btn" data-action="seized-save-next">保存并继续</button>') +
+      '<button type="submit" class="btn btn-primary">保存</button></div></form>', 'seized');
+    const f = modalRoot.querySelector('input[name=' + (focus || 'barcode') + ']');
+    if (f && focus !== false) { try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); } }
   }
   function syncSeizedForm() {
     const f = modalRoot.querySelector('form[data-form="seized"]');
     if (!f || !state.seizedEdit) return;
-    state.seizedEdit.barcode = f.barcode.value.trim();
-    state.seizedEdit.brand = f.brand.value.trim();
-    state.seizedEdit.qty = f.qty.value;
-    state.seizedEdit.unit = f.unit.value;
+    const s = state.seizedEdit;
+    s.barcode = f.barcode.value.trim();
+    s.brand = f.brand.value.trim();
+    s.qty = f.qty.value;
+    s.unit = f.unit.value;
+    s.price = f.price.value;
   }
+  // 把查到的品规写入编辑状态（不改动用户正在输入的条码框，完整条码记在 matchedCode）
+  function applyMatch(m) {
+    const s = state.seizedEdit;
+    s.cands = null;
+    s.matchedCode = m.code;
+    s.brand = m.name;
+    s.priceUnit = m.unit || '条';
+    s.catalogPrice = m.retail;
+    s.price = m.retail == null ? '' : String(m.retail);
+    s.matched = m.local ? 'local' : 'catalog';
+    s.priceSource = m.retail == null ? '' : s.matched;
+    s.priceCat = m.local ? '' : (m.cat || '');
+    s.priceExit = !!m.exit;
+    if (s.priceUnit === '支') s.unit = '支';
+    else if (s.unit === '支' && !s.qty) s.unit = '条';
+    s.barcodeMsg = '';
+  }
+  function clearMatch() {
+    const s = state.seizedEdit;
+    if (s.matched) { s.brand = ''; s.price = ''; }
+    Object.assign(s, { matched: '', matchedCode: '', priceSource: '', priceCat: '', priceExit: false, catalogPrice: null, priceUnit: '条', cands: null });
+  }
+  // 输入框内容变化时就地更新（不整体重绘，避免输入法/光标跳动）
+  function refreshSeizedLive() {
+    const s = state.seizedEdit; const f = modalRoot.querySelector('form[data-form="seized"]');
+    if (!s || !f) return;
+    f.brand.value = s.brand; f.price.value = s.price; f.unit.value = s.unit;
+    modalRoot.querySelector('#barcode-msg').innerHTML = matchBoxHtml(s);
+    modalRoot.querySelector('#price-unit').textContent = s.priceUnit;
+    modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
+  }
+  function onSeizedCodeInput() {
+    syncSeizedForm();
+    const s = state.seizedEdit;
+    const d = s.barcode.replace(/\D/g, '');
+    const m = d.length === 6 || d.length >= 8 ? lookupCode(d) : [];
+    if (m.length === 1) applyMatch(m[0]);
+    else { clearMatch(); if (m.length > 1) s.cands = m; else if (d.length >= 8) s.barcodeMsg = '价格目录和条码库中都没有该条码：请确认扫的是"条"包装上的条码，或手工填写品规和单价'; else if (d.length === 6) s.barcodeMsg = '没有条码后 6 位为 ' + d + ' 的品规，请核对或输入完整条码'; else s.barcodeMsg = ''; }
+    refreshSeizedLive();
+    return m.length === 1;
+  }
+  function onSeizedBrandInput() {
+    syncSeizedForm();
+    const s = state.seizedEdit;
+    const it = lookupName(s.brand);
+    if (it && s.matchedCode !== it.code) { const typed = s.barcode; applyMatch(it); s.barcode = typed; refreshSeizedLive(); }
+  }
+  function onSeizedPriceInput() {
+    syncSeizedForm();
+    const s = state.seizedEdit;
+    if (s.catalogPrice != null && Number(s.price) === Number(s.catalogPrice)) s.priceSource = s.matched || 'catalog';
+    else s.priceSource = s.price === '' ? '' : 'manual';
+    modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
+  }
+  function focusSeized(name) { const el = modalRoot.querySelector('form[data-form="seized"] [name=' + name + ']'); if (el) { el.focus(); if (el.select) el.select(); } }
 
   /* ========================= 业务动作 ========================= */
   async function openCase(id, fromPop) {
@@ -1207,6 +1617,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<label class="field"><span>现场地址</span><input type="text" name="address" maxlength="80" value="' + esc(c.address || '') + '"></label>' +
       '<label class="field"><span>当事人</span><input type="text" name="party" maxlength="40" value="' + esc(c.party || '') + '"></label>' +
       '<label class="field"><span>备注</span><textarea name="note" maxlength="500">' + esc(c.note || '') + '</textarea></label>' +
+      '<div class="row nowrap"><label class="field grow"><span>立案日期（核价表用）</span><input type="date" name="filingDate" value="' + esc(c.filingDate || '') + '"></label></div>' +
+      '<label class="field"><span>案由（核价表用，留空按案件类型默认）</span><input type="text" name="cause" maxlength="60" value="' + esc(c.cause || '') + '" placeholder="' + esc((c.template && c.template.cause) || DEFAULT_CAUSE[c.typeId] || '') + '"></label>' +
       '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">保存</button></div></form>', 'info');
   }
   function numberTaken(number, exceptId) {
@@ -1227,7 +1639,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
     if (ctx.kind === 'seizedPhoto') {
       state.seizedEdit.newPhoto = p; state.seizedEdit.thumb = p.thumb;
-      renderSeizedModal(); qualityToast(p); return;
+      renderSeizedModal(false); qualityToast(p); return;
     }
     if (ctx.kind === 'extra') {
       const caption = await promptDialog('补充照片说明', '这张照片拍的是什么？', '补充照片');
@@ -1269,54 +1681,95 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const s = state.seizedEdit; if (!s) return;
     if (r.value) {
       s.barcode = r.value;
-      const known = state.barcodeDict[r.value];
-      if (known && !s.brand) s.brand = known;
-      s.barcodeMsg = '已识别条码' + (known ? '，已从条码库带出品规' : '，条码库中暂无该条码，请填写品规');
+      const m = lookupCode(r.value);
+      if (m.length === 1) applyMatch(m[0]);
+      else { clearMatch(); s.barcodeMsg = '已识别条码，但价格目录和条码库中没有该条码：请确认扫的是"条"包装上的条码，或手工填写品规和单价'; }
       // 扫码用的照片顺便作为该品规的照片，省去再拍一次
       if (!s.thumb && state.caseData) {
         showBusy('正在保存照片…');
         try {
-          const p = await processPhoto(file, { caseNumber: state.caseData.number, label: '查获卷烟 ' + r.value, source: 'camera' });
+          const p = await processPhoto(file, { caseNumber: state.caseData.number, label: '查获卷烟 ' + (s.brand || r.value), source: 'camera' });
           s.newPhoto = p; s.thumb = p.thumb;
-          s.barcodeMsg += '；扫码照片已作为该品规照片';
         } catch (e) { /* 照片处理失败不影响条码 */ } finally { hideBusy(); }
       }
+      renderSeizedModal(m.length === 1 ? 'qty' : 'brand');
+      toast(m.length === 1 ? '已识别：' + s.brand : '已识别条码 ' + r.value + '，未查到品规', m.length === 1 ? 'ok' : 'warn', 2000);
     } else {
-      s.barcodeMsg = r.error === 'notfound' ? '未识别到条码，请对准条码重拍或手工输入' : '条码识别失败，请手工输入';
+      s.barcodeMsg = r.error === 'notfound' ? '未识别到条码，请对准条码重拍，或直接输入条码后 6 位' : '条码识别失败，请输入条码后 6 位';
+      renderSeizedModal('barcode');
+      toast(s.barcodeMsg, 'warn');
     }
-    renderSeizedModal();
-    if (!r.value) toast(s.barcodeMsg, 'warn');
   }
-  async function saveSeized() {
+  async function saveSeized(next) {
     syncSeizedForm();
     const s = state.seizedEdit; const c = state.caseData;
     const msg = modalRoot.querySelector('#seized-msg');
     if (!s.brand && !s.qty && !s.barcode) { msg.textContent = '请至少填写条码、品规或数量'; return; }
+    const code = s.matchedCode || s.barcode;
+    const price = s.price === '' ? '' : Number(s.price);
+    const item = {
+      id: s.id || uid(), brand: s.brand, qty: s.qty === '' ? '' : Number(s.qty), unit: s.unit || '条', barcode: code,
+      price, priceUnit: s.priceUnit || '条', priceSource: price === '' ? '' : (s.priceSource || 'manual'), priceCat: s.priceSource === 'catalog' ? s.priceCat : '',
+      priceExit: s.priceSource === 'catalog' && !!s.priceExit, priceVersion: s.priceSource === 'catalog' ? activeCatalog().version : ''
+    };
+    // 同一条码、同一单位已登记过：询问是否合并数量
+    let mergeInto = null;
+    if (!s.id && code && Number(item.qty) > 0) {
+      const dup = c.seizedItems.find(x => x.barcode === code && (x.unit || '条') === item.unit && Number(x.qty) > 0);
+      if (dup) {
+        const snapshot = Object.assign({}, s);
+        const ok = await confirmDialog('本案已登记"' + (dup.brand || code) + '" ' + dup.qty + ' ' + dup.unit + '。\n是否把本次的 ' + item.qty + ' ' + item.unit + ' 合并为 ' + (Number(dup.qty) + Number(item.qty)) + ' ' + item.unit + '？', { title: '重复品规', okText: '合并数量', cancelText: '另起一行' });
+        state.seizedEdit = snapshot;
+        if (ok) mergeInto = dup.id;
+      }
+    }
     let photo = null;
     if (s.newPhoto) {
-      const photoId = await storePhoto(s.newPhoto); if (!photoId) return;
+      const photoId = await storePhoto(s.newPhoto); if (!photoId) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
       photo = photoRecord(s.newPhoto, photoId);
     }
-    const item = { id: s.id || uid(), brand: s.brand, qty: s.qty === '' ? '' : Number(s.qty), unit: s.unit || '条', barcode: s.barcode };
     let oldPhotoId = null;
     const saved = await mutateCase(c.id, cc => {
+      if (mergeInto) {
+        const t = cc.seizedItems.find(x => x.id === mergeInto);
+        if (t) {
+          const before = t.qty;
+          t.qty = Math.round((Number(t.qty) + Number(item.qty)) * 1000) / 1000;
+          if (photo && !t.photoId) Object.assign(t, { photoId: photo.photoId, thumb: photo.thumb, capturedAt: photo.capturedAt, sha256: photo.sha256, geo: photo.geo, source: photo.source });
+          addLog(cc, '合并查获卷烟数量', (t.brand || code) + ' ' + before + ' + ' + item.qty + ' = ' + t.qty + t.unit);
+          return;
+        }
+      }
       const i = cc.seizedItems.findIndex(x => x.id === item.id);
       const prev = i >= 0 ? cc.seizedItems[i] : {};
       const merged = Object.assign({}, prev, item);
       if (photo) { oldPhotoId = prev.photoId || null; Object.assign(merged, { photoId: photo.photoId, thumb: photo.thumb, capturedAt: photo.capturedAt, sha256: photo.sha256, geo: photo.geo, source: photo.source }); }
       if (i >= 0) cc.seizedItems[i] = merged; else cc.seizedItems.push(merged);
-      addLog(cc, i >= 0 ? '修改查获卷烟' : '登记查获卷烟', (item.brand || '品规未填') + ' ' + (item.qty || '?') + item.unit + (item.barcode ? '，条码 ' + item.barcode : ''));
+      addLog(cc, i >= 0 ? '修改查获卷烟' : '登记查获卷烟', (item.brand || '品规未填') + ' ' + (item.qty || '?') + item.unit + (item.barcode ? '，条码 ' + item.barcode : '') + (price !== '' ? '，单价 ' + price + ' 元/' + item.priceUnit + (item.priceSource === 'manual' ? '（手工录入）' : '') : ''));
     });
-    if (!saved) return;
+    if (!saved) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
     if (oldPhotoId) Store.del(photoKey(oldPhotoId), true);
-    if (s.barcode && s.brand && state.barcodeDict[s.barcode] !== s.brand && !state.barcodeDict[s.barcode]) {
+    // 价格目录里没有的条码：把品规和单价记入本地条码库，下次输入后 6 位即可带出
+    if (code && /^\d{6,14}$/.test(code) && item.brand && !catalogMap().has(code)) {
       const dict = await getJSON(K.barcodes, true, {}) || {};
-      dict[s.barcode] = s.brand; state.barcodeDict = dict;
-      await setJSON(K.barcodes, dict, true);
+      const cur = dict[code];
+      const val = { brand: item.brand, price: price === '' ? null : price, unit: item.priceUnit };
+      if (!cur || typeof cur === 'string' || cur.brand !== val.brand || cur.price !== val.price) {
+        dict[code] = val; state.barcodeDict = dict;
+        await setJSON(K.barcodes, dict, true);
+      }
     }
-    closeModal(); state.seizedEdit = null;
+    const p = priceLine(item);
+    const label = (item.brand || code) + ' ' + (item.qty || '?') + item.unit + (p.amount != null ? '（' + fmtMoney(p.amount) + ' 元）' : '');
     render();
-    toast(seizedItemValid(item) ? '已保存查获卷烟' : '已保存，但信息不完整，打包前需补全', seizedItemValid(item) ? 'ok' : 'warn');
+    if (next) {
+      state.seizedEdit = blankSeized(item.unit === '支' ? '条' : item.unit);
+      renderSeizedModal('barcode');
+      toast((mergeInto ? '已合并：' : '已保存：') + label + '，请继续录入', 'ok', 2000);
+    } else {
+      closeModal(); state.seizedEdit = null;
+      toast(seizedItemValid(item) ? (mergeInto ? '已合并：' : '已保存：') + label : '已保存，但信息不完整，打包前需补全', seizedItemValid(item) ? 'ok' : 'warn');
+    }
   }
 
   async function showPhotoViewer(kind, id) {
@@ -1433,17 +1886,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const x = c.extras[i];
         await addPhoto(x, num + '_补充照片_' + (i + 1) + '_' + safeName(x.caption) + '.jpg', { group: 'extra', label: '补充照片 ' + (i + 1) + '：' + x.caption });
       }
-      const logEntry = { at: ts, by: state.user.id, byName: state.user.name, action: '生成证据包', detail: '照片 ' + files.length + ' 张' };
-      const manifest = buildManifest(c, files, ts, logEntry);
-      zip.file('证据清单说明.txt', '﻿' + manifest.replace(/\n/g, '\r\n'), { date: new Date(ts) });
-      zip.file('SHA256SUMS.txt', files.map(f => f.hash + '  ' + f.name).join('\n') + '\n', { date: new Date(ts) });
+      // 核价表（有查获卷烟时生成，按"涉案烟草专卖品核价表"模板版式）
+      let sheet = null;
+      if (c.seizedItems.length) {
+        const x = await buildPriceSheetXlsx(c);
+        sheet = { name: uniq(priceSheetName(c)), hash: await sha256Hex(x.bytes), data: x.data };
+        zip.file(sheet.name, x.bytes, { binary: true, date: new Date(ts) });
+      }
+      const logEntry = { at: ts, by: state.user.id, byName: state.user.name, action: '生成证据包', detail: '照片 ' + files.length + ' 张' + (sheet ? '，含核价表（涉案金额 ' + fmtMoney(sheet.data.totalAmount) + ' 元）' : '') };
+      const manifest = buildManifest(c, files, ts, logEntry, sheet);
+      zip.file('证据清单说明.txt', '\ufeff' + manifest.replace(/\n/g, '\r\n'), { date: new Date(ts) });
+      zip.file('SHA256SUMS.txt', files.map(f => f.hash + '  ' + f.name).concat(sheet ? [sheet.hash + '  ' + sheet.name] : []).join('\n') + '\n', { date: new Date(ts) });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE', mimeType: 'application/zip' });
       const filename = num + '_证据包_' + stamp(ts) + '.zip';
       const file = (typeof File === 'function') ? new File([blob], filename, { type: 'application/zip' }) : blob;
       state.lastPackage = { blob, filename, file };
       const optionalMissing = caseStats(c).optTotal - caseStats(c).optDone;
       await mutateCase(c.id, cc => { cc.lastPackagedAt = ts; cc.log.push(logEntry); }, ts);
-      state.packResult = { ok: true, filename, size: blob.size, photos: files.length, optionalMissing };
+      const amt = caseAmount(c.seizedItems);
+      state.packResult = { ok: true, filename, size: blob.size, photos: files.length, optionalMissing, sheet: sheet ? sheet.name : '', amount: amt.total, unpriced: amt.count - amt.priced };
       hideBusy();
       downloadBlob(blob, filename);
       render();
@@ -1454,7 +1915,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       return block({ title: '生成证据包失败', detail: e.message || String(e) });
     } finally { hideBusy(); }
   }
-  function buildManifest(c, files, ts, logEntry) {
+  function buildManifest(c, files, ts, logEntry, sheet) {
     const L = [];
     const line = (k, v) => L.push(k + '：' + (v == null || v === '' ? '—' : v));
     L.push('涉烟案件现场证据清单说明', '==============================');
@@ -1491,10 +1952,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     L.push('二、查获卷烟（' + c.seizedItems.length + ' 条）');
     c.seizedItems.forEach((it, i) => {
       L.push('[' + (i + 1) + '] 品规：' + it.brand + '　数量：' + it.qty + ' ' + (it.unit || '条') + '　条码：' + (it.barcode || '—'));
+      const p = priceLine(it);
+      L.push('    单价：' + (p.hasPrice ? p.price + ' 元/' + p.pUnit + '（' + (it.priceSource === 'catalog' ? '价格目录' + (it.priceVersion ? ' ' + it.priceVersion : '') : it.priceSource === 'local' ? '本地条码库' : '手工录入') + '）' : '未核价') +
+        (p.amount != null ? '　小计：' + fmtMoney(p.amount) + ' 元' : '') + (p.notes.length ? '　备注：' + p.notes.join('；') : ''));
       const f = files.find(x => x.group === 'seized' && x.seizedIndex === i);
       if (f) photoLines(f);
     });
-    if (c.seizedItems.length) L.push('合计：' + seizedSummary(c.seizedItems));
+    if (c.seizedItems.length) {
+      const amt = caseAmount(c.seizedItems);
+      L.push('合计：' + seizedSummary(c.seizedItems) + '；涉案金额 ' + fmtMoney(amt.total) + ' 元' + (amt.priced < amt.count ? '（另有 ' + (amt.count - amt.priced) + ' 条未核价）' : ''));
+    }
+    if (sheet) {
+      L.push('核价表：' + sheet.name);
+      L.push('    SHA-256：' + sheet.hash);
+    }
     L.push('');
     const ex = files.filter(f => f.group === 'extra');
     L.push('三、补充照片（' + ex.length + ' 张）');
@@ -1543,7 +2014,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const data = {
         format: 'tobacco-evidence-backup', formatVersion: 1, appVersion: APP_VERSION, exportedAt: ts, exportedBy: state.user.name,
         templates: await getJSON(K.templates, true, state.templates), users: await getJSON(K.users, true, state.users),
-        settings: Object.assign({}, state.settings, { lastExportAt: ts }), barcodeDict: await getJSON(K.barcodes, true, {}),
+        settings: Object.assign({}, state.settings, { lastExportAt: ts }), barcodeDict: await getJSON(K.barcodes, true, {}), priceCatalog: await getJSON(K.priceCatalog, true, null),
         index: await getJSON(K.index, true, []), cases, photos
       };
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -1583,6 +2054,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       idx.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       const w = [[K.index, idx], [K.users, data.users], [K.templates, Array.isArray(data.templates) && data.templates.length ? data.templates : defaultTemplates()],
         [K.settings, Object.assign({ watermark: true }, data.settings || {})], [K.barcodes, data.barcodeDict || {}]];
+      if (data.priceCatalog) w.push([K.priceCatalog, data.priceCatalog]); else await Store.del(K.priceCatalog, true);
       for (const [k, v] of w) if (!(await Store.set(k, JSON.stringify(v), true))) fail++;
     } finally { hideBusy(); }
     if (fail) reportSaveFail('case:');
@@ -1694,12 +2166,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (!number) { toast('案件编号不能为空', 'error'); return; }
         state.index = await getJSON(K.index, true, state.index);
         if (numberTaken(number, state.caseData.id)) { toast('案件编号已存在，请核对', 'error'); return; }
-        const vals = { number, address: f.address.value.trim(), party: f.party.value.trim(), note: f.note.value.trim() };
+        const vals = { number, address: f.address.value.trim(), party: f.party.value.trim(), note: f.note.value.trim(), filingDate: f.filingDate.value, cause: f.cause.value.trim() };
         await mutateCase(state.caseData.id, cc => {
           const changed = Object.keys(vals).filter(k => (cc[k] || '') !== vals[k]);
           if (!changed.length) return false;
           Object.assign(cc, vals);
-          addLog(cc, '修改案件信息', changed.map(k => ({ number: '编号', address: '地址', party: '当事人', note: '备注' }[k])).join('、'));
+          addLog(cc, '修改案件信息', changed.map(k => ({ number: '编号', address: '地址', party: '当事人', note: '备注', filingDate: '立案日期', cause: '案由' }[k])).join('、'));
         });
         closeModal(); render();
         return;
@@ -1717,7 +2189,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (state.view === 'cases') await refreshList(true); else render();
         return;
       }
-      case 'seized': await saveSeized(); return;
+      case 'seized': await saveSeized(false); return;
       case 'prompt': { const v = f.value.value; closeModal(v); return; }
       case 'addUser': {
         const n = f.name.value.trim(), role = f.role.value, pin = f.pin.value;
@@ -1755,8 +2227,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const code = f.code.value.trim(), brand = f.brand.value.trim();
         if (!code || !brand) return;
         const dict = await getJSON(K.barcodes, true, {}) || {};
-        dict[code] = brand;
+        dict[code] = { brand, price: f.price.value === '' ? null : Number(f.price.value), unit: f.unit.value };
         if (await setJSON(K.barcodes, dict, true)) { state.barcodeDict = dict; toast('已保存', 'ok'); render(); }
+        return;
+      }
+      case 'priceSettings': {
+        const cur = await getJSON(K.settings, true, {}) || {};
+        const next = Object.assign({}, cur, { priceOrg: f.org.value.trim(), priceBasis: f.basis.value.trim() });
+        if (await setJSON(K.settings, next, true)) { state.settings = Object.assign({ watermark: true }, next); toast('已保存核价表设置', 'ok'); }
         return;
       }
     }
@@ -1808,14 +2286,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
         return;
       }
-      case 'seized-add': state.seizedEdit = { id: null, brand: '', qty: '', unit: '条', barcode: '', thumb: '' }; renderSeizedModal(); return;
+      case 'seized-add': state.seizedEdit = blankSeized('条'); renderSeizedModal('barcode'); return;
+      case 'seized-save-next': await saveSeized(true); return;
+      case 'pick-cand': {
+        syncSeizedForm();
+        const m = state.seizedEdit.cands && state.seizedEdit.cands.find(x => x.code === el.dataset.code);
+        if (m) { applyMatch(m); renderSeizedModal('qty'); }
+        return;
+      }
+      case 'qty-step': case 'qty-set': {
+        syncSeizedForm();
+        const s = state.seizedEdit; const cur = Number(s.qty) || 0;
+        s.qty = String(action === 'qty-set' ? Number(el.dataset.v) : Math.max(0, Math.round((cur + Number(el.dataset.d)) * 1000) / 1000));
+        const f = modalRoot.querySelector('form[data-form="seized"]'); if (f) f.qty.value = s.qty;
+        modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
+        return;
+      }
+      case 'price-sheet': await downloadPriceSheet(); return;
       case 'seized-edit': {
         const s = state.caseData.seizedItems.find(x => x.id === el.dataset.id); if (!s) return;
-        state.seizedEdit = { id: s.id, brand: s.brand || '', qty: s.qty === '' || s.qty == null ? '' : String(s.qty), unit: s.unit || '条', barcode: s.barcode || '', thumb: s.thumb || '' };
-        renderSeizedModal(); return;
+        state.seizedEdit = seizedFromItem(s);
+        renderSeizedModal(Number(s.qty) > 0 ? false : 'qty'); return;
       }
       case 'seized-del': {
         const s = state.caseData.seizedItems.find(x => x.id === el.dataset.id); if (!s) return;
+        if (modal.kind === 'seized') { closeModal(); state.seizedEdit = null; }
         if (!(await confirmDialog('确定删除查获卷烟记录"' + (s.brand || '品规未填') + ' ' + (s.qty || '') + (s.unit || '') + '"吗？', { danger: true, okText: '删除' }))) return;
         let removed = null;
         const saved = await mutateCase(state.caseData.id, cc => {
@@ -1829,9 +2324,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       case 'scan-barcode': {
         syncSeizedForm();
         if (!barcodeSupported()) {
-          state.seizedEdit.barcodeMsg = '当前浏览器不支持条码自动识别，请手工输入条码';
-          renderSeizedModal(); toast('当前浏览器不支持条码自动识别，请手工输入', 'warn');
-          const inp = modalRoot.querySelector('input[name=barcode]'); if (inp) inp.focus();
+          if (!state.seizedEdit.matchedCode) state.seizedEdit.barcodeMsg = '当前浏览器不支持条码自动识别，请直接输入条码后 6 位';
+          renderSeizedModal('barcode'); toast('当前浏览器不支持条码自动识别，请直接输入条码后 6 位', 'warn');
           return;
         }
         state.pendingCapture = { kind: 'barcode' };
@@ -1926,9 +2420,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
       case 'barcode-del': {
         const code = el.dataset.code;
-        if (!(await confirmDialog('确定从条码库删除 ' + code + '（' + state.barcodeDict[code] + '）吗？', { danger: true, okText: '删除' }))) return;
+        if (!(await confirmDialog('确定从条码库删除 ' + code + '（' + (dictEntry(code) || {}).name + '）吗？', { danger: true, okText: '删除' }))) return;
         const dict = await getJSON(K.barcodes, true, {}) || {}; delete dict[code];
         if (await setJSON(K.barcodes, dict, true)) { state.barcodeDict = dict; render(); }
+        return;
+      }
+      case 'catalog-import': $('#catalog-input').value = ''; $('#catalog-input').click(); return;
+      case 'catalog-reset': {
+        if (!(await confirmDialog('确定删除导入的价格目录，恢复系统内置的"' + (BUILTIN_CATALOG ? BUILTIN_CATALOG.title : '') + '"吗？', { danger: true, okText: '恢复内置目录' }))) return;
+        if (await Store.del(K.priceCatalog, true)) { state.customCatalog = null; toast('已恢复内置目录', 'ok'); render(); }
         return;
       }
       case 'export': await exportData(); return;
@@ -1958,6 +2458,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function onInput(ev) {
     const el = ev.target;
+    if (el.hasAttribute('data-price-q')) { renderPriceResults(el.value); return; }
     if (el.dataset.filter) {
       state.filters[el.dataset.filter] = el.value;
       renderCaseList();
@@ -1967,6 +2468,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const t = state.editTemplate; const ci = +el.dataset.ci, ii = +el.dataset.ii;
       if (el.dataset.tpl === 'name') t.name = el.value;
       if (el.dataset.tpl === 'seized') t.requiresSeizedItems = el.checked;
+      if (el.dataset.tpl === 'cause') t.cause = el.value;
       if (el.dataset.tpl === 'cat') t.categories[ci].name = el.value;
       if (el.dataset.tpl === 'item') t.categories[ci].items[ii].name = el.value;
       if (el.dataset.tpl === 'req') t.categories[ci].items[ii].required = el.checked;
@@ -1982,19 +2484,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       run(async () => { if (await setJSON(K.prefs, state.prefs, false)) toast('已保存设置', 'ok', 1200); });
       return;
     }
-    if (el.name === 'barcode' && modal.kind === 'seized') {
-      const code = el.value.trim();
-      const msg = modalRoot.querySelector('#barcode-msg');
-      const chk = checkGtin(code);
-      const known = state.barcodeDict[code];
-      const brand = modalRoot.querySelector('input[name=brand]');
-      if (known && brand && !brand.value.trim()) { brand.value = known; }
-      if (msg) {
-        msg.className = 'small ' + (chk === false ? 'warn-text' : 'muted');
-        msg.textContent = chk === false ? '条码校验位不符，请核对是否输错' : (known ? '条码库：' + known : '');
-      }
+    if (modal.kind === 'seized' && state.seizedEdit && el.closest('form[data-form="seized"]')) {
+      if (el.name === 'barcode' && ev.type === 'input') onSeizedCodeInput();
+      else if (el.name === 'brand') onSeizedBrandInput();
+      else if (el.name === 'price') onSeizedPriceInput();
+      else if (el.name === 'qty' || el.name === 'unit') { syncSeizedForm(); modalRoot.querySelector('#subtotal').innerHTML = subtotalText(state.seizedEdit); }
     }
   }
+  // 查获登记：条码框回车 → 查找并跳到数量；数量框回车 → 保存并继续（适配蓝牙/USB 扫码枪：扫完自动回车）
+  modalRoot.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' || modal.kind !== 'seized' || !state.seizedEdit) return;
+    const n = ev.target.name;
+    if (n === 'barcode') { ev.preventDefault(); const ok = onSeizedCodeInput(); focusSeized(ok ? 'qty' : 'brand'); }
+    else if (n === 'brand') { ev.preventDefault(); onSeizedBrandInput(); focusSeized('qty'); }
+    else if (n === 'qty' || n === 'price') { ev.preventDefault(); run(() => saveSeized(!state.seizedEdit.id)); }
+  });
   [root, modalRoot].forEach(r => {
     r.addEventListener('click', onClick);
     r.addEventListener('submit', onSubmit);
@@ -2011,6 +2515,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   cameraInput.addEventListener('change', onFileChosen);
   albumInput.addEventListener('change', onFileChosen);
+  $('#catalog-input').addEventListener('change', ev => { const f = ev.target.files && ev.target.files[0]; if (f) run(() => importCatalogFile(f)); });
   importInput.addEventListener('change', () => { const f = importInput.files && importInput.files[0]; if (f) run(() => importData(f)); });
   $('#save-banner-close').addEventListener('click', () => { $('#save-banner').hidden = true; });
 
@@ -2033,6 +2538,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     state.templates = tpls;
     state.settings = Object.assign({ watermark: true }, await getJSON(K.settings, true, {}));
     state.barcodeDict = await getJSON(K.barcodes, true, {}) || {};
+    state.customCatalog = await getJSON(K.priceCatalog, true, null);
     state.index = await getJSON(K.index, true, []) || [];
   }
   async function init() {

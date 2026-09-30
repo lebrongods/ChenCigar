@@ -44,24 +44,28 @@ module.exports = [
     }
   },
   {
-    name: '查获卷烟：手工输入条码；校验位错误给出提示；条码自动学习并带出品规',
+    name: '查获卷烟：目录外条码手工录入品规和单价；校验位错误提示；自动记入本地条码库，下次输后 6 位带出',
     fn: async () => {
       const w = L.createWorld(); const p = await readyCase(w); const page = p.page;
       try {
         await page.click('[data-action=seized-add]');
-        await page.fill('form[data-form=seized] [name=barcode]', '6901028075016');
+        await page.fill('form[data-form=seized] [name=barcode]', '6901028999990');
         await page.waitForSelector('#barcode-msg:has-text("校验位不符")');
-        await page.fill('form[data-form=seized] [name=barcode]', '6901028075015');
-        await page.waitForFunction(() => !document.querySelector('#barcode-msg').textContent.includes('校验位不符'));
+        await page.fill('form[data-form=seized] [name=barcode]', '6901028999991');
+        await page.waitForSelector('#barcode-msg:has-text("都没有该条码")');
         await page.fill('form[data-form=seized] [name=brand]', '测试品规甲');
         await page.fill('form[data-form=seized] [name=qty]', '2');
+        await page.fill('form[data-form=seized] [name=price]', '88');
         await page.click('form[data-form=seized] [type=submit]');
         await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
-        assert(JSON.parse(w.shared.get('barcode-dict'))['6901028075015'] === '测试品规甲', '条码应写入条码库');
+        const dict = JSON.parse(w.shared.get('barcode-dict'))['6901028999991'];
+        assert(dict && dict.brand === '测试品规甲' && dict.price === 88, '应写入本地条码库：' + JSON.stringify(dict));
+        assert((await page.textContent('#seized-list')).includes('手工价'), '手工录入的价格应标"手工价"');
         await page.click('[data-action=seized-add]');
-        await page.fill('form[data-form=seized] [name=barcode]', '6901028075015');
-        const brand = await page.inputValue('form[data-form=seized] [name=brand]');
-        assert(brand === '测试品规甲', '同一条码应自动带出品规，实际：' + brand);
+        await page.fill('form[data-form=seized] [name=barcode]', '999991');
+        await page.waitForSelector('#barcode-msg:has-text("本地条码库")');
+        assert(await page.inputValue('form[data-form=seized] [name=brand]') === '测试品规甲', '输入后 6 位应带出品规');
+        assert(await page.inputValue('form[data-form=seized] [name=price]') === '88', '应带出单价');
         await page.click('[data-action=modal-close]');
         return '';
       } finally { await p.close(); }
@@ -76,12 +80,12 @@ module.exports = [
         await page.click('[data-action=seized-add]');
         await page.click('[data-action=scan-barcode]');
         await page.waitForSelector('#barcode-msg:has-text("不支持条码自动识别")');
-        await page.fill('form[data-form=seized] [name=barcode]', '6901028075015');
+        await page.fill('form[data-form=seized] [name=barcode]', '6901028888882');
         await page.fill('form[data-form=seized] [name=brand]', '手工品规');
         await page.fill('form[data-form=seized] [name=qty]', '1');
         await page.click('form[data-form=seized] [type=submit]');
         await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
-        assert((await page.textContent('#seized-list')).includes('6901028075015'), '手工输入的条码应保存');
+        assert((await page.textContent('#seized-list')).includes('6901028888882'), '手工输入的条码应保存');
         assert(p.errors.length === 0, '控制台不应有错误：' + p.errors.join(';'));
         return '';
       } finally { await p.close(); }
@@ -100,15 +104,16 @@ module.exports = [
         const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-action=scan-barcode]')]);
         await fc.setFiles(L.img('sharp'));
         await page.waitForFunction(() => { const i = document.querySelector('form[data-form=seized] [name=barcode]'); return i && i.value === '6901028075015'; });
-        assert((await page.textContent('#barcode-msg')).includes('已识别条码'), '应提示已识别');
+        assert((await page.textContent('#barcode-msg')).includes('中华（硬）'), '扫码后应从价格目录带出品规');
+        assert(await page.inputValue('form[data-form=seized] [name=price]') === '450', '应带出建议零售价');
+        assert(await page.evaluate(() => document.activeElement && document.activeElement.name === 'qty'), '扫码成功后光标应跳到数量');
         assert(await page.$('.modal .mini img'), '扫码照片应作为品规照片显示');
-        await page.fill('form[data-form=seized] [name=brand]', '扫码品规');
         await page.fill('form[data-form=seized] [name=qty]', '4');
         await page.click('form[data-form=seized] [type=submit]');
         await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
-        assert(u.files.includes('S-001_查获卷烟_1_扫码品规.jpg'), '证据包应含查获卷烟照片：' + u.files.join(','));
+        assert(u.files.includes('S-001_查获卷烟_1_中华（硬）.jpg'), '证据包应含查获卷烟照片：' + u.files.join(','));
         return '仅验证识别结果的处理流程；真机识别率未测';
       } finally { await p.close(); }
     }
