@@ -1,28 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const JSZip = require('jszip');
 const L = require('./lib');
 const Z = require('./zip');
 const { assert } = L;
 
-// 读取 xlsx 第一个工作表：返回 {cells: {A1: 值}, formulas: {E5: 'C5*D5'}, merges: [...], workbook}
-async function readXlsx(buf) {
-  const zip = await JSZip.loadAsync(buf);
-  const xml = await zip.file('xl/worksheets/sheet1.xml').async('string');
-  const workbook = await zip.file('xl/workbook.xml').async('string');
-  const cells = {}, formulas = {};
-  const unesc = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  for (const m of xml.matchAll(/<c r="([A-Z]+\d+)"[^>]*?(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-    const body = m[2] || '';
-    const t = body.match(/<t[^>]*>([\s\S]*?)<\/t>/);
-    const v = body.match(/<v>([\s\S]*?)<\/v>/);
-    const f = body.match(/<f>([\s\S]*?)<\/f>/);
-    if (t) cells[m[1]] = unesc(t[1]); else if (v) cells[m[1]] = Number(v[1]);
-    if (f) formulas[m[1]] = f[1];
-  }
-  const merges = [...xml.matchAll(/<mergeCell ref="([^"]+)"/g)].map(m => m[1]);
-  return { cells, formulas, merges, workbook };
-}
+const { readXlsx } = require('./xlsx');
 async function openSeized(page) { await page.click('[data-action=seized-add]'); await page.waitForSelector('form[data-form=seized]'); }
 const val = (page, n) => page.inputValue('form[data-form=seized] [name=' + n + ']');
 
@@ -171,7 +153,7 @@ module.exports = [
         ['A1:F2', 'A3:F3', 'B11:F11'].forEach(m => assert(x.merges.includes(m), '缺少合并单元格 ' + m));
         assert(x.workbook.includes('核价单!$A$1:$F$14'), '打印区域应为 A1:F14');
         const m = u.manifest;
-        assert(m.includes('核价表：' + name) && m.includes('涉案金额 1,107,475 元（另有 1 条未核价）'), '清单应记录核价表与涉案金额');
+        assert(m.includes('核价表：' + name) && m.includes('涉案金额 1,107,475 元（另有 1 项未核价）'), '清单应记录核价表与涉案金额');
         ctx.note('**核价表样例**（本次测试生成）：5 条查获记录 → 中华（硬）1601 条×450、红塔山（硬经典）25 包折 2.5 条×90、王冠（国粹）12 支×150（按支计价）、手工价 1 条、未核价 1 条；合计 1,107,475 元。已用 LibreOffice 打开并转 PDF 目视核对版式。');
         return '核价表单元格、公式、合并单元格、打印区域均符合模板';
       } finally { await p.close(); }

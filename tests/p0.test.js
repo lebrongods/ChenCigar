@@ -164,7 +164,7 @@ module.exports = [
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
         const m = u.manifest;
-        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.1.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
+        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.3.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
         const jpgs = u.files.filter(f => f.endsWith('.jpg'));
         let checked = 0;
         for (const f of jpgs.slice(0, 5)) {
@@ -207,7 +207,9 @@ module.exports = [
         };
         await check('案件详情');
         await page.click('[data-action=seized-add]'); await page.fill('form[data-form=seized] [name=barcode]', '19'); await check('查获登记弹窗');
-        await page.fill('form[data-form=seized] [name=barcode]', '075015'); await page.fill('form[data-form=seized] [name=qty]', '12345'); await check('查获登记弹窗（已带出价格）'); await page.click('[data-action=modal-close]');
+        await page.fill('form[data-form=seized] [name=barcode]', '075015'); await page.fill('form[data-form=seized] [name=qty]', '12345'); await check('查获登记弹窗（已带出价格）');
+        await page.click('.kind-tabs .btn:has-text("烟叶")'); await page.waitForSelector('.unit-fixed'); await check('涉案物品弹窗（烟叶）');
+        await page.click('.kind-tabs .btn:has-text("电子烟")'); await page.waitForSelector('.seg'); await check('涉案物品弹窗（电子烟）'); await page.click('[data-action=modal-close]');
         await page.click('[data-action=back]'); await check('案件列表');
         await page.click('[data-action=new-case]'); await check('新建案件'); await page.click('[data-action=back]');
         await page.click('.tabbar [data-view=admin]'); await check('管理');

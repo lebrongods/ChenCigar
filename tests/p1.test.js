@@ -161,7 +161,7 @@ module.exports = [
         await L.addSeized(page, { brand: 'x', qty: 1 });
         const { zip } = await L.packageCase(page);
         const m = Z.unzip(zip).manifest;
-        ['管理员甲　创建案件', '管理员甲　分配承办人：未分配 → 稽查员A', '管理员甲　拍摄照片：车辆信息 / 车头照片', '管理员甲　登记查获卷烟', '管理员甲　生成证据包'].forEach(s => assert(m.includes(s), '清单日志缺少：' + s));
+        ['管理员甲　创建案件', '管理员甲　分配承办人：未分配 → 稽查员A', '管理员甲　拍摄照片：车辆信息 / 车头照片', '管理员甲　登记涉案物品', '管理员甲　生成证据包'].forEach(s => assert(m.includes(s), '清单日志缺少：' + s));
         const c = JSON.parse(w.shared.get('case:' + JSON.parse(w.shared.get('case-index'))[0].id));
         assert(c.log.every(l => l.at && l.byName && l.action), '日志条目应含时间、操作人、动作');
         return c.log.length + ' 条日志';

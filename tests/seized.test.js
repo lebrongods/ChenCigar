@@ -17,7 +17,7 @@ async function packBlockedText(page) {
 
 module.exports = [
   {
-    name: '查获卷烟：品规为空 / 数量为 0 均拦截打包；补全后可打包',
+    name: '涉案物品（卷烟）：品规为空 / 数量为 0 均拦截打包；补全后可打包',
     fn: async () => {
       const w = L.createWorld(); const p = await readyCase(w); const page = p.page;
       try {
@@ -44,7 +44,7 @@ module.exports = [
     }
   },
   {
-    name: '查获卷烟：目录外条码手工录入品规和单价；校验位错误提示；自动记入本地条码库，下次输后 6 位带出',
+    name: '涉案物品（卷烟）：目录外条码手工录入品规和单价；校验位错误提示；自动记入本地条码库，下次输后 6 位带出',
     fn: async () => {
       const w = L.createWorld(); const p = await readyCase(w); const page = p.page;
       try {
@@ -113,7 +113,7 @@ module.exports = [
         await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
-        assert(u.files.includes('S-001_查获卷烟_1_中华（硬）.jpg'), '证据包应含查获卷烟照片：' + u.files.join(','));
+        assert(u.files.includes('S-001_涉案物品_1_中华（硬）.jpg'), '证据包应含涉案物品照片：' + u.files.join(','));
         return '仅验证识别结果的处理流程；真机识别率未测';
       } finally { await p.close(); }
     }

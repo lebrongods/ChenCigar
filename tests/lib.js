@@ -125,12 +125,13 @@ async function logout(page) {
   await page.click('[data-action=logout]');
   await page.waitForSelector('form[data-form=login]');
 }
-async function addUser(page, name, role, pin) {
+async function addUser(page, name, role, pin, certNo) {
   await page.click('.tabbar [data-view=admin]');
   await page.click('[data-action=goto][data-view=users]');
   await page.fill('form[data-form=addUser] [name=name]', name);
   await page.selectOption('form[data-form=addUser] [name=role]', role);
   await page.fill('form[data-form=addUser] [name=pin]', pin);
+  if (certNo) await page.fill('form[data-form=addUser] [name=certNo]', certNo);
   await page.click('form[data-form=addUser] [type=submit]');
   await page.waitForSelector('.list-item >> text=' + name);
   await page.click('[data-action=back]');
