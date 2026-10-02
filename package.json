@@ -1,6 +1,6 @@
 {
   "name": "tobacco-evidence-collector",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "涉烟案件现场证据采集系统（单文件 HTML）",
   "scripts": {

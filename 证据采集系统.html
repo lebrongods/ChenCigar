@@ -61,7 +61,7 @@ p { margin: 6px 0; }
 label.field { display: block; margin-bottom: 12px; }
 label.field > span, .unit-fixed > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
 div.field { margin-bottom: 12px; }
-input[type=text], input[type=password], input[type=number], input[type=search], select, textarea {
+input[type=text], input[type=password], input[type=number], input[type=search], input[type=tel], input[type=date], input[type=datetime-local], select, textarea {
   width: 100%; min-height: 44px; padding: 8px 10px; font-size: 16px; border: 1px solid var(--line); border-radius: 8px;
   background: #fff; color: var(--text); font-family: inherit; }
 textarea { min-height: 72px; resize: vertical; }
@@ -170,6 +170,37 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 .unit-fixed-text { min-height: 44px; display: flex; align-items: center; padding: 0 10px; border-radius: 8px; background: #f6f7f6; }
 input.readonly { background: #f3f5f4; color: var(--muted); }
 .badge.kind { background: #e8eef9; color: #34507f; }
+.quick-nav { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 12px; padding-bottom: 2px; }
+.quick-nav .btn { flex: none; }
+.section-title, #sec-log { scroll-margin-top: 64px; }
+.chip.active { background: var(--pri); border-color: var(--pri); color: #fff; font-weight: 600; }
+.officer-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto; gap: 6px; margin-top: 6px; }
+.officer-row input[readonly] { background: #f6f7f6; }
+.id-msg { margin: -8px 0 10px; }
+.qa-card { padding: 10px 12px; border-left: 4px solid #d5dbd8; }
+.qa-card.answered { border-left-color: var(--ok); }
+.qa-q { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+.qa-no { flex: none; min-width: 26px; height: 26px; padding: 0 4px; border-radius: 13px; background: var(--pri-l); color: var(--pri); font-size: 13px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.qa-qtext { font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.qa-a { min-height: 56px; }
+.qa-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; justify-content: space-between; }
+.qa-hints, .qa-ops { display: flex; flex-wrap: wrap; gap: 6px; }
+.qa-ops { margin-left: auto; }
+.rec-editor .chips .btn { flex: 0 1 auto; max-width: 100%; }
+.body-text { min-height: 180px; }
+.rec-editor.locked input, .rec-editor.locked textarea { background: #f3f5f4; color: var(--text); }
+.modal.wide { max-width: 760px; }
+.doc-page { background: #fff; color: #111; font-family: "SimSun", "Songti SC", "STSong", "Noto Serif CJK SC", serif; font-size: 15px; line-height: 1.8; padding: 20px 16px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; margin-top: 8px; }
+.doc-page.big { font-size: 20px; }
+.doc-title { text-align: center; font-size: 1.5em; font-weight: 700; margin-bottom: 6px; }
+.doc-line.right { text-align: right; }
+.doc-line .u { text-decoration: underline; }
+.doc-line .blank { display: inline-block; max-width: 100%; height: 1.2em; border-bottom: 1px solid #333; vertical-align: bottom; }
+.doc-para { text-indent: 2em; }
+.doc-qa { padding-left: 2em; text-indent: -2em; }
+.doc-qa-label { font-weight: 700; }
+.doc-blank { height: .8em; }
+.doc-footer { margin-top: 16px; padding-top: 8px; border-top: 1px dashed #bbb; font-size: .8em; color: #555; }
 .seized-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 14px; }
 </style>
 </head>
@@ -202,7 +233,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.2.0';
+  const APP_VERSION = '2.3.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -477,6 +508,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     user: null,
     view: 'loading',
     caseId: null, caseData: null, caseDirty: false,
+    recordId: null, recordData: null, recSave: null, qaEditing: null,
     filters: { q: '', type: '', status: '', assignee: '' },
     lastRefresh: 0,
     editTemplate: null,
@@ -544,7 +576,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     Object.assign(state, params || {});
     state.view = view;
     state.packResult = null;
-    const hs = { view, caseId: state.caseId };
+    const hs = { view, caseId: state.caseId, recordId: state.recordId };
     try { replace ? history.replaceState(hs, '') : history.pushState(hs, ''); } catch (e) { /* 忽略 */ }
     render();
     window.scrollTo(0, 0);
@@ -553,9 +585,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (modal.kind) { closeModal(false); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
     if (!state.user) return;
     const s = e.state || { view: 'cases' };
-    if (s.view === 'case' && s.caseId) { openCase(s.caseId, true); return; }
-    state.view = ['cases', 'admin', 'me'].includes(s.view) ? s.view : 'cases';
-    render();
+    run(async () => {
+      if (state.view === 'record' && !(s.view === 'record' && s.recordId === state.recordId)) await leaveRecord();
+      if (s.view === 'record' && s.recordId && state.caseData && state.caseData.id === s.caseId) { await openRecord(s.recordId, true); return; }
+      if ((s.view === 'case' || s.view === 'record') && s.caseId) { await openCase(s.caseId, true); return; }
+      state.view = ['cases', 'admin', 'me'].includes(s.view) ? s.view : 'cases';
+      render();
+    });
   });
 
   /* ========================= 案件数据 ========================= */
@@ -729,9 +765,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     lines.forEach((t, i) => ctx.fillText(t, padding, h - boxH + padding + i * lh, w - padding * 2));
   }
   function dataUrlToBytes(url) { return fromB64(url.slice(url.indexOf(',') + 1)); }
-  function getGeo() {
+  function getGeo(force) {
     return new Promise(resolve => {
-      if (!state.prefs.geo || !navigator.geolocation) return resolve(null);
+      if ((!state.prefs.geo && !force) || !navigator.geolocation) return resolve(null);
       let done = false;
       const finish = v => { if (!done) { done = true; clearTimeout(t); resolve(v); } };
       const t = setTimeout(() => finish(null), GEO_TIMEOUT);
@@ -969,7 +1005,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const d = c.filingDate ? new Date(c.filingDate + 'T00:00:00') : null;
     const dateText = d && !isNaN(d) ? ' ' + d.getFullYear() + ' 年 ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日' : '      年    月    日';
     const numText = /^临-/.test(c.number) ? '             ' : c.number;
-    const org = (state.settings.priceOrg || '').trim() || '桂阳县烟草专卖局';
+    const org = orgName();
     const rows = c.seizedItems.map((s, i) => {
       const p = lines[i];
       const notes = p.notes.slice();
@@ -1057,6 +1093,470 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function priceSheetName(c) { return safeName(c.number) + '_涉案烟草专卖品核价表.xlsx'; }
 
+  /* ========================= 笔录（询问笔录 / 现场笔录） ========================= */
+  // 笔录正文另存于 rec:<id>（输入时自动保存），案件里只保留摘要列表 case.records
+  const recKey = id => 'rec:' + id;
+  const REC_TYPES = { inquiry: '询问笔录', scene: '现场笔录' };
+  const SUBJECT_ROLES = ['当事人', '驾驶人', '证人', '其他'];
+  // 以下询问提纲为示例，管理员可在"管理 → 笔录模板"修改。每行一个问题，"｜"后为常用回答；
+  // {单位}{执法人员}{案由}{日期}{地点}{当事人}{物品清单} 会自动替换；@物品清单 / @本人信息 为一键填入
+  const DEFAULT_NOTICE = '我们是{单位}的执法人员{执法人员}，这是我们的执法证件（出示证件），请你过目。现依法就{案由}一案向你进行询问调查。你应当如实回答询问，不得作伪证或者隐匿证据；对与本案无关的问题，你有权拒绝回答；你有陈述和申辩的权利；如果你认为执法人员与本案有直接利害关系或者其他关系可能影响公正处理的，有权申请回避。以上内容你听清楚了吗？｜听清楚了';
+  const DEFAULT_OPEN = ['你是否申请执法人员回避？｜不申请', '请你讲一下你的个人基本情况。｜@本人信息'];
+  const DEFAULT_CLOSE = ['你还有什么需要补充的吗？｜没有', '以上笔录请你核对（或已向你宣读），记录是否与你所说的一致？｜一致'];
+  const DEFAULT_QUESTIONS = {
+    't-transport': [
+      '{日期}执法人员在{地点}检查的车辆是谁的？车牌号是多少？由谁驾驶？｜车是我自己的，由我驾驶',
+      '你这次从哪里出发？准备开往哪里？',
+      '执法人员在车上查获的卷烟是谁的？｜是我的｜是别人托我运的',
+      '车上的卷烟共有哪些品种、多少数量？｜@物品清单',
+      '这些卷烟是从哪里、从谁手里购进的？什么时间购进？进货价格是多少？',
+      '这些卷烟准备运到哪里？交给谁？用于什么用途？',
+      '你运输这些卷烟有没有烟草专卖品准运证或者其他合法证明？｜没有',
+      '你运输这些卷烟有没有报酬？报酬是多少？｜没有报酬',
+      '你以前有没有运输过卷烟？｜没有',
+      '你知不知道运输烟草专卖品需要办理烟草专卖品准运证？｜知道｜不知道',
+      '对执法人员现场清点并登记保存的卷烟品种、数量，你有没有异议？｜没有异议'
+    ],
+    't-unlicensed': [
+      '你经营的店铺叫什么名称？地址在哪里？经营者是谁？经营多长时间了？',
+      '你的店铺有没有办理烟草专卖零售许可证？｜没有办理｜办理过，但已过期',
+      '{日期}执法人员在你店内查获的卷烟是谁的？｜是我的',
+      '这些卷烟共有哪些品种、多少数量？存放在店内什么位置？｜@物品清单',
+      '这些卷烟是从哪里、从谁手里购进的？什么时间购进？进货价格是多少？有没有进货凭证？',
+      '这些卷烟你准备以什么价格出售？已经卖出了多少？｜还没有卖',
+      '你从什么时候开始销售卷烟？共销售了多少？获利多少？',
+      '你知不知道销售卷烟需要办理烟草专卖零售许可证？｜知道｜不知道',
+      '对执法人员现场清点并登记保存的卷烟品种、数量，你有没有异议？｜没有异议'
+    ],
+    't-fake': [
+      '{日期}执法人员在{地点}查获的卷烟是谁的？｜是我的',
+      '这些卷烟共有哪些品种、多少数量？｜@物品清单',
+      '这些卷烟是从哪里、从谁手里购进的？对方的姓名（微信名）、联系方式、住址是什么？',
+      '你是什么时间、以什么价格购进的？怎么付款的？有没有聊天记录或转账记录？',
+      '你购进这些卷烟的价格与正规渠道的价格相比怎么样？',
+      '你知不知道这些卷烟是假冒注册商标的卷烟？｜不知道｜知道',
+      '这些卷烟你准备以什么价格出售？已经卖出了多少？卖给了谁？｜还没有卖',
+      '你以前有没有销售过这类卷烟？｜没有',
+      '对执法人员现场清点并登记保存的卷烟品种、数量，你有没有异议？｜没有异议'
+    ],
+    't-factory': [
+      '这处场所（{地点}）是谁的？是自有的还是租用的？租金多少？从什么时候开始使用？',
+      '现场的卷接机、包装机等生产设备是谁的？从哪里、从谁手里购进的？什么时间购进？价格多少？',
+      '你们在这里生产卷烟多长时间了？共生产了多少？',
+      '生产用的烟丝、卷烟纸、滤嘴棒、商标包装等原辅材料是从哪里、从谁手里购进的？',
+      '生产出来的卷烟卖给了谁？售价多少？已经销售了多少？获利多少？',
+      '参与生产的有哪些人？各自负责什么？报酬是多少？',
+      '你在其中负责什么工作？',
+      '你知不知道生产假冒注册商标的卷烟是违法的？｜知道｜不知道',
+      '对执法人员现场查获的设备、原辅材料、成品和半成品的品种、数量，你有没有异议？｜没有异议'
+    ]
+  };
+  const GENERIC_QUESTIONS = [
+    '请你讲一下事情的经过。',
+    '{日期}执法人员在{地点}查获的物品是谁的？',
+    '这些物品共有哪些品种、多少数量？｜@物品清单',
+    '这些物品是从哪里来的？准备用于什么用途？',
+    '对执法人员现场清点的物品品种、数量，你有没有异议？｜没有异议'
+  ];
+  // 现场笔录：各类案件的现场检查要素（点选/填写后自动组成"现场情况"草稿）
+  const LOCATION_OPTS = ['货架', '柜台', '仓库', '住所', '车辆', '其他'];
+  const SCENE_FIELDS = {
+    't-transport': [
+      { key: 'vehicleType', label: '车辆类型', type: 'chips', options: ['小型轿车', '面包车', '货车', '客车', '摩托车', '其他'] },
+      { key: 'plate', label: '车牌号', type: 'text', placeholder: '如：湘L12345' },
+      { key: 'driver', label: '驾驶人', type: 'text' },
+      { key: 'location', label: '涉案物品存放位置', type: 'multi', options: ['后备箱', '货厢', '后排座位', '驾驶室', '其他'] },
+      { key: 'permit', label: '准运证情况', type: 'chips', options: ['未能出示烟草专卖品准运证', '出示的准运证与实际运输物品不符'] },
+      { key: 'docs', label: '随车单据', type: 'chips', options: ['无随车单据', '有托运单', '有发票'] }
+    ],
+    't-unlicensed': [
+      { key: 'shop', label: '店铺名称', type: 'text' },
+      { key: 'operator', label: '经营者', type: 'text' },
+      { key: 'license', label: '许可证情况', type: 'chips', options: ['未办理烟草专卖零售许可证', '不能出示烟草专卖零售许可证', '烟草专卖零售许可证已过有效期'] },
+      { key: 'location', label: '卷烟存放位置', type: 'multi', options: LOCATION_OPTS },
+      { key: 'invoice', label: '进货凭证', type: 'chips', options: ['未能提供合法进货凭证', '提供了部分进货凭证'] }
+    ],
+    't-fake': [
+      { key: 'location', label: '卷烟存放位置', type: 'multi', options: LOCATION_OPTS },
+      { key: 'features', label: '卷烟外观（现场初步查看）', type: 'multi', options: ['包装印刷粗糙', '防伪标识异常', '烟支外观异常', '生产批号异常', '其他'] },
+      { key: 'trade', label: '交易记录', type: 'chips', options: ['发现当事人手机中存有相关交易记录', '未发现相关交易记录'] }
+    ],
+    't-factory': [
+      { key: 'siteType', label: '场所类型', type: 'chips', options: ['民房', '厂房', '仓库', '地下室', '其他'] },
+      { key: 'area', label: '面积（平方米）', type: 'text', inputmode: 'decimal' },
+      { key: 'equipment', label: '生产设备', type: 'multi', options: ['卷接机', '包装机', '切丝机', '烘干设备', '其他'] },
+      { key: 'running', label: '设备状态', type: 'chips', options: ['正在运转生产', '处于停机状态'] },
+      { key: 'materials', label: '原辅材料', type: 'multi', options: ['烟丝', '卷烟纸', '滤嘴棒', '商标包装', '其他'] },
+      { key: 'people', label: '现场人员人数', type: 'text', inputmode: 'numeric' }
+    ]
+  };
+  const GENERIC_SCENE_FIELDS = [
+    { key: 'location', label: '涉案物品存放位置', type: 'multi', options: LOCATION_OPTS },
+    { key: 'desc', label: '现场概况', type: 'textarea', placeholder: '场所、人员、物品存放等情况' }
+  ];
+  const MEASURES = ['先行登记保存', '扣押', '责令改正', '其他'];
+  const OPINION_OPTS = ['以上情况属实', '对以上记录无异议', '当事人拒绝签字'];
+
+  function orgName() { return (state.settings.priceOrg || '').trim() || '桂阳县烟草专卖局'; }
+  function splitQLine(line) { const p = String(line).split(/[｜|]/).map(s => s.trim()); return { q: p[0], hints: p.slice(1).filter(Boolean) }; }
+  // 未设置时用默认；管理员保存过（哪怕清空）则以保存的为准
+  function qLines(v, def) {
+    if (v == null) return def.slice();
+    return (Array.isArray(v) ? v : String(v).split('\n')).map(s => String(s).trim()).filter(Boolean);
+  }
+  function noticeLine() { return String(state.settings.inquiryNotice || '').trim() || DEFAULT_NOTICE; }
+  function openLines() { return qLines(state.settings.inquiryOpen, DEFAULT_OPEN); }
+  function closeLines() { return qLines(state.settings.inquiryClose, DEFAULT_CLOSE); }
+  function typeQuestionLines(typeId) { const t = findTemplate(typeId); return qLines(t && t.questions, DEFAULT_QUESTIONS[typeId] || GENERIC_QUESTIONS); }
+  function sceneFieldsFor(typeId) { return SCENE_FIELDS[typeId] || GENERIC_SCENE_FIELDS; }
+
+  function cnDate(ts) { const d = new Date(ts); return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日'; }
+  function cnTime(ts) { const d = new Date(ts); return d.getHours() + '时' + pad2(d.getMinutes()) + '分'; }
+  function cnRange(a, b) {
+    if (!a) return '';
+    if (!b) return cnDate(a) + cnTime(a) + '至　　时　　分';
+    return cnDate(a) + cnTime(a) + '至' + (cnDate(a) === cnDate(b) ? '' : cnDate(b)) + cnTime(b);
+  }
+  function dtLocal(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function parseDtLocal(v) { if (!v) return null; const t = new Date(v).getTime(); return isNaN(t) ? null : t; }
+  // 18 位居民身份证号码：校验位、出生日期、性别
+  function parseIdNo(v) {
+    const s = String(v || '').trim().toUpperCase();
+    if (!/^\d{17}[\dX]$/.test(s)) return null;
+    const w = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+    let sum = 0; for (let i = 0; i < 17; i++) sum += Number(s[i]) * w[i];
+    const y = +s.slice(6, 10), m = +s.slice(10, 12), d = +s.slice(12, 14);
+    const dt = new Date(y, m - 1, d);
+    const dateOk = dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d && dt.getTime() <= Date.now();
+    return { valid: '10X98765432'[sum % 11] === s[17] && dateOk, birth: dateOk ? y + '-' + pad2(m) + '-' + pad2(d) : '', gender: Number(s[16]) % 2 ? '男' : '女' };
+  }
+  function ageAt(birth, ts) {
+    if (!birth) return null;
+    const b = new Date(birth + 'T00:00:00'), d = new Date(ts || Date.now());
+    if (isNaN(b)) return null;
+    let a = d.getFullYear() - b.getFullYear();
+    if (d.getMonth() < b.getMonth() || (d.getMonth() === b.getMonth() && d.getDate() < b.getDate())) a--;
+    return a >= 0 && a < 130 ? a : null;
+  }
+  function birthText(birth, ts) {
+    if (!birth) return '';
+    const b = new Date(birth + 'T00:00:00'); if (isNaN(b)) return birth;
+    const a = ageAt(birth, ts);
+    return cnDate(b.getTime()) + (a != null ? '（' + a + '岁）' : '');
+  }
+  // 涉案物品清单文字，如"卷烟2个品规（中华（硬）20条、利群（新版）29条），共计49条；烟叶30公斤"
+  function itemsSummaryText(c) {
+    const items = (c.seizedItems || []).filter(s => String(s.brand || '').trim() && Number(s.qty) > 0);
+    if (!items.length) return '';
+    const cig = items.filter(s => (s.kind || 'cigarette') === 'cigarette');
+    const parts = [];
+    if (cig.length) {
+      const sum = {};
+      cig.forEach(s => { const u = s.unit || '条'; sum[u] = Math.round(((sum[u] || 0) + Number(s.qty)) * 1000) / 1000; });
+      parts.push('卷烟' + cig.length + '个品规（' + cig.map(s => s.brand + s.qty + (s.unit || '条')).join('、') + '），共计' + Object.keys(sum).map(u => sum[u] + u).join(''));
+    }
+    items.filter(s => (s.kind || 'cigarette') !== 'cigarette').forEach(s => parts.push(s.brand + s.qty + s.unit));
+    return parts.join('；');
+  }
+  function selfIntro(p, ts) {
+    if (!p || !p.name) return '';
+    const parts = ['我叫' + p.name];
+    if (p.gender) parts.push(p.gender);
+    if (p.birth) parts.push(birthText(p.birth, ts).replace(/（(\d+)岁）/, '出生，今年$1岁').replace(/日$/, '日出生'));
+    if (p.ethnic) parts.push(p.ethnic.replace(/族$/, '') + '族');
+    if (p.idNo) parts.push('身份证号码' + p.idNo);
+    if (p.job) parts.push('工作单位或职业：' + p.job);
+    if (p.address) parts.push('住' + p.address);
+    if (p.phone) parts.push('联系电话' + p.phone);
+    return parts.join('，') + '。';
+  }
+  function officerNames(r) { return (r.officers || []).map(o => o.name).filter(Boolean).join('、'); }
+  function officerCerts(r) { const named = (r.officers || []).filter(o => o.name); return named.some(o => o.certNo) ? named.map(o => o.certNo || '________').join('、') : ''; }
+  function officersWithCert(r) { return (r.officers || []).filter(o => o.name).map(o => o.name + (o.certNo ? '（执法证号：' + o.certNo + '）' : '')).join('、'); }
+  function firstActivityTime(c) {
+    const ts = [c.createdAt];
+    Object.values(c.evidence || {}).forEach(e => e && e.capturedAt && ts.push(e.capturedAt));
+    (c.seizedItems || []).concat(c.extras || []).forEach(x => x && x.capturedAt && ts.push(x.capturedAt));
+    return Math.min.apply(null, ts.filter(Boolean));
+  }
+  function recordCtx(c, r) {
+    return {
+      单位: orgName(), 执法人员: officerNames(r) || '　　　', 案由: caseCause(c) || c.typeName || '', 日期: cnDate(firstActivityTime(c)),
+      地点: (r.place || c.address || '').replace(/（坐标：[^）]*）/, ''), 当事人: c.party || '', 物品清单: itemsSummaryText(c) || '涉案物品'
+    };
+  }
+  function fillVars(text, ctx) { return String(text || '').replace(/\{(单位|执法人员|案由|日期|地点|当事人|物品清单)\}/g, (m, k) => ctx[k] || ''); }
+  function newQA(line, ctx, tag) { const p = splitQLine(line); return { id: uid(), qTpl: p.q, q: fillVars(p.q, ctx), a: '', hints: p.hints, edited: false, tag: tag || '' }; }
+  function buildInquiryQA(c, r) {
+    const ctx = recordCtx(c, r);
+    return [newQA(noticeLine(), ctx, 'notice')]
+      .concat(openLines().map(l => newQA(l, ctx, 'open')), typeQuestionLines(c.typeId).map(l => newQA(l, ctx, 'type')), closeLines().map(l => newQA(l, ctx, 'close')));
+  }
+  function blankPerson(name) { return { name: name || '', gender: '', birth: '', ethnic: '', idNo: '', job: '', address: '', phone: '' }; }
+  function createRecord(type, c) {
+    const me = state.user; const now = Date.now();
+    const r = {
+      id: uid(), caseId: c.id, type, createdAt: now, updatedAt: now, createdBy: me.id, createdByName: me.name, status: 'draft',
+      startAt: type === 'scene' ? firstActivityTime(c) : now, endAt: null, place: c.address || '',
+      officers: [{ id: me.id, name: me.name, certNo: me.certNo || '' }], recorder: me.name
+    };
+    if (type === 'inquiry') {
+      Object.assign(r, { subject: Object.assign(blankPerson(c.party), { role: '当事人' }), others: '' });
+      r.seq = 1 + (c.records || []).filter(x => x.type === 'inquiry' && c.party && x.name === c.party).length;
+      r.qa = buildInquiryQA(c, r);
+    } else {
+      Object.assign(r, { party: Object.assign(blankPerson(c.party), { present: '在场' }), witness: blankPerson(), facts: {}, factsOther: {}, measures: ['先行登记保存'], measureDocNo: '', measureOther: '', body: '', partyOpinion: '' });
+    }
+    return r;
+  }
+  function normalizeRecord(r) {
+    if (!r) return null;
+    r.officers = Array.isArray(r.officers) ? r.officers : [];
+    r.status = r.status || 'draft';
+    if (r.type === 'inquiry') {
+      r.subject = Object.assign(blankPerson(), { role: '当事人' }, r.subject || {});
+      r.qa = Array.isArray(r.qa) ? r.qa : [];
+      r.qa.forEach(x => { x.hints = Array.isArray(x.hints) ? x.hints : []; x.a = x.a || ''; x.q = x.q || ''; });
+      r.seq = r.seq || 1;
+    } else {
+      r.party = Object.assign(blankPerson(), { present: '在场' }, r.party || {});
+      r.witness = Object.assign(blankPerson(), r.witness || {});
+      r.facts = r.facts || {}; r.factsOther = r.factsOther || {};
+      r.measures = Array.isArray(r.measures) ? r.measures : [];
+      ['measureDocNo', 'measureOther', 'body', 'partyOpinion'].forEach(k => { r[k] = r[k] || ''; });
+    }
+    return r;
+  }
+  function recordSummary(r) {
+    const inq = r.type === 'inquiry';
+    const p = inq ? r.subject : r.party;
+    return {
+      id: r.id, type: r.type, name: (p && p.name) || '', role: inq ? r.subject.role : '', seq: r.seq || 1, status: r.status,
+      startAt: r.startAt, endAt: r.endAt || null, updatedAt: r.updatedAt,
+      answered: inq ? r.qa.filter(x => String(x.a || '').trim()).length : 0, total: inq ? r.qa.length : 0
+    };
+  }
+  function recordTitle(r) { const p = r.type === 'inquiry' ? r.subject : r.party; return REC_TYPES[r.type] + (p && p.name ? '（' + p.name + '）' : ''); }
+  // 定稿 / 生成前的完整性提示（只提示，不强制）
+  function recordIssues(c, r) {
+    const out = [];
+    const named = r.officers.filter(o => String(o.name || '').trim());
+    if (named.length < 2) out.push((r.type === 'inquiry' ? '询问人' : '执法人员') + '不足 2 人');
+    named.filter(o => !String(o.certNo || '').trim()).forEach(o => out.push(o.name + ' 未填执法证号'));
+    if (!String(r.recorder || '').trim()) out.push('记录人未填');
+    if (!r.endAt) out.push('结束时间未填');
+    const checkId = (p, label) => { if (p.idNo && !(parseIdNo(p.idNo) || {}).valid) out.push(label + '身份证号码校验不通过'); };
+    if (r.type === 'inquiry') {
+      if (!r.subject.name.trim()) out.push('被询问人姓名未填');
+      checkId(r.subject, '被询问人');
+      const un = r.qa.filter(x => !String(x.a || '').trim()).length;
+      if (un) out.push(un + ' 个问题未回答（不会写入笔录）');
+    } else {
+      if (r.party.present !== '不在场' && !r.party.name.trim()) out.push('当事人姓名未填');
+      if (r.party.present === '不在场' && !r.witness.name.trim()) out.push('当事人不在场，未填见证人');
+      checkId(r.party, '当事人'); checkId(r.witness, '见证人');
+      if (!r.body.trim()) out.push('现场情况未填写');
+    }
+    return out;
+  }
+  // 现场情况草稿：由检查要素、涉案物品、照片数量、处理措施自动组成，生成后可自由修改
+  function factVal(r, f) {
+    const v = r.facts[f.key]; const other = String((r.factsOther || {})[f.key] || '').trim();
+    if (f.type === 'multi') return (Array.isArray(v) ? v : []).map(x => x === '其他' ? other : x).filter(Boolean);
+    if (v === '其他') return other;
+    return String(v || '').trim();
+  }
+  function joinCn(arr) { return arr.filter(Boolean).join('、'); }
+  function sceneTypeSentence(typeId, f) {
+    if (typeId === 't-transport') {
+      const veh = f('vehicleType'), plate = f('plate'), driver = f('driver'), loc = f('location'), permit = f('permit'), docs = f('docs');
+      if (!veh && !plate && !driver && !loc.length && !permit && !docs) return '';
+      let s = '经检查，' + (veh || '该车辆') + (plate ? '（车牌号：' + plate + '）' : '') + (driver ? '由' + driver + '驾驶，' : '，') +
+        '在该车' + (loc.length ? joinCn(loc) : '') + '内发现涉案物品。';
+      if (permit) s += '当事人' + permit + '。';
+      if (docs) s += docs === '无随车单据' ? '车上无相关随车单据。' : '车上' + docs + '。';
+      return s;
+    }
+    if (typeId === 't-unlicensed') {
+      const shop = f('shop'), op = f('operator'), lic = f('license'), loc = f('location'), inv = f('invoice');
+      if (!shop && !op && !lic && !loc.length && !inv) return '';
+      return '经检查，' + (shop || '该店铺') + (op ? '（经营者：' + op + '）' : '') + (lic ? lic : '') + '，在' + (loc.length ? '店内' + joinCn(loc) : '店内') + '发现待售卷烟。' + (inv ? '当事人' + inv + '。' : '');
+    }
+    if (typeId === 't-fake') {
+      const loc = f('location'), feat = f('features'), trade = f('trade');
+      if (!loc.length && !feat.length && !trade) return '';
+      return '经检查，在' + (loc.length ? joinCn(loc) : '现场') + '发现卷烟。' + (feat.length ? '经现场初步查看，上述卷烟存在' + joinCn(feat) + '等情况，涉嫌假冒注册商标。' : '') + (trade ? trade + '。' : '');
+    }
+    if (typeId === 't-factory') {
+      const st = f('siteType'), area = f('area'), eq = f('equipment'), run = f('running'), mat = f('materials'), ppl = f('people');
+      let s = '';
+      if (st || area) s += '经检查，该场所' + (st ? '为' + st : '') + (area ? (st ? '，' : '') + '面积约' + area + '平方米' : '') + '。';
+      if (eq.length) s += '现场发现' + joinCn(eq) + '等生产设备' + (run ? '，' + run : '') + '。';
+      if (mat.length) s += '现场存放有' + joinCn(mat) + '等原辅材料。';
+      if (ppl) s += '检查时现场有' + ppl + '名人员。';
+      return s;
+    }
+    const loc = f('location'), desc = f('desc');
+    return (loc.length ? '经检查，在' + joinCn(loc) + '发现涉案物品。' : '') + (desc ? desc.replace(/[。.]?$/, '。') : '');
+  }
+  function draftSceneBody(c, r) {
+    const P = [];
+    const fields = sceneFieldsFor(c.typeId);
+    const absent = r.party.present === '不在场';
+    P.push(cnDate(r.startAt) + cnTime(r.startAt) + '，' + orgName() + '执法人员' + (officersWithCert(r) || '　　　　') + '在' + (r.place || '　　　　') +
+      '依法进行检查。执法人员向' + (absent ? '现场有关人员' : '当事人' + r.party.name) + '出示了执法证件，表明身份，说明来意。');
+    if (absent) P.push('检查时当事人不在场，执法人员邀请' + (r.witness.name || '　　　') + '作为见证人到场见证。');
+    const typed = sceneTypeSentence(c.typeId, key => { const def = fields.find(x => x.key === key); return def ? factVal(r, def) : ''; });
+    if (typed) P.push(typed);
+    const items = itemsSummaryText(c);
+    if (items) P.push('经现场清点，查获' + items + '。');
+    const nPhotos = Object.values(c.evidence || {}).filter(hasPhoto).length + (c.seizedItems || []).filter(s => s.photoId).length + (c.extras || []).length;
+    if (nPhotos) P.push('执法人员对现场情况和涉案物品进行了拍照取证，共拍摄照片' + nPhotos + '张。');
+    const no = String(r.measureDocNo || '').trim();
+    (r.measures || []).forEach(m => {
+      if (m === '先行登记保存') P.push('执法人员依法对上述涉案物品予以先行登记保存' + (no ? '，并制作《证据先行登记保存通知书》（编号：' + no + '）' : '') + '。');
+      if (m === '扣押') P.push('执法人员依法对上述涉案物品予以扣押' + (no ? '（文书编号：' + no + '）' : '') + '。');
+      if (m === '责令改正') P.push('执法人员责令当事人立即改正违法行为。');
+      if (m === '其他' && String(r.measureOther || '').trim()) P.push(String(r.measureOther).trim().replace(/[。.]?$/, '。'));
+    });
+    return P.join('\n');
+  }
+
+  /* ---------- 笔录文档模型：同一份模型输出 Word 与页面预览，保证两者一致 ---------- */
+  const dT = text => ({ text });
+  // 有内容时加下划线；空白处用下划线字符占位（行尾的空格下划线在 Word/WPS 中不显示，打印后没法手写）
+  const dU = (value, blank) => String(value || '').trim() ? { text: String(value).trim(), u: true } : { text: '_'.repeat((blank || 6) * 2), blank: blank || 6 };
+  const dL = (...runs) => ({ type: 'line', runs });
+  const keep = b => Object.assign(b, { keep: true }); // 与下一段同页（签名区不被拆到两页）
+  function inquiryModel(c, r) {
+    const s = r.subject; const B = [];
+    B.push({ type: 'title', text: '询 问 笔 录' });
+    B.push({ type: 'right', runs: [dT('第 ' + (r.seq || 1) + ' 次询问')] });
+    B.push(dL(dT('询问时间：'), dU(cnRange(r.startAt, r.endAt), 20)));
+    B.push(dL(dT('询问地点：'), dU(r.place, 20)));
+    B.push(dL(dT('询问人：'), dU(officerNames(r), 8), dT('　执法证号：'), dU(officerCerts(r), 12)));
+    B.push(dL(dT('记录人：'), dU(r.recorder, 8)));
+    B.push(dL(dT('被询问人：'), dU(s.name, 5), dT('　性别：'), dU(s.gender, 2), dT('　出生日期：'), dU(birthText(s.birth, r.startAt), 8)));
+    B.push(dL(dT('民族：'), dU(s.ethnic, 3), dT('　身份证号码：'), dU(s.idNo, 12)));
+    B.push(dL(dT('工作单位或职业：'), dU(s.job, 10), dT('　联系电话：'), dU(s.phone, 8)));
+    B.push(dL(dT('住址：'), dU(s.address, 24)));
+    B.push(dL(dT('被询问人身份：'), dU(s.role, 4), dT('　其他在场人员：'), dU(r.others, 8)));
+    B.push({ type: 'blank' });
+    r.qa.filter(x => String(x.a || '').trim()).forEach(x => { B.push({ type: 'qa', label: '问', text: String(x.q || '').trim() }); B.push({ type: 'qa', label: '答', text: String(x.a).trim() }); });
+    B.push({ type: 'blank' });
+    B.push(keep(dL(dT('被询问人核对意见：'), dU('', 20))));
+    B.push(keep(dL(dU('', 29))));
+    B.push(keep(dL(dT('被询问人（签名并捺印）：'), dU('', 8), dT('　　年　　月　　日'))));
+    B.push(dL(dT('询问人（签名）：'), dU('', 4), dT('　'), dU('', 4), dT('　记录人（签名）：'), dU('', 4)));
+    return { title: '询问笔录', blocks: B, footer: '被询问人签名：　　　　　　询问人签名：　　　　　　记录人签名：' };
+  }
+  function sceneModel(c, r) {
+    const p = r.party, w = r.witness; const B = [];
+    B.push({ type: 'title', text: '现 场 笔 录' });
+    B.push(dL(dT('检查时间：'), dU(cnRange(r.startAt, r.endAt), 20)));
+    B.push(dL(dT('检查地点：'), dU(r.place, 20)));
+    B.push(dL(dT('执法人员：'), dU(officersWithCert(r), 20)));
+    B.push(dL(dT('记录人：'), dU(r.recorder, 8)));
+    B.push(dL(dT('当事人：'), dU(p.name, 5), dT('　性别：'), dU(p.gender, 2), dT('　出生日期：'), dU(birthText(p.birth, r.startAt), 8)));
+    B.push(dL(dT('身份证号码：'), dU(p.idNo, 12), dT('　联系电话：'), dU(p.phone, 8)));
+    B.push(dL(dT('工作单位或职业：'), dU(p.job, 8), dT('　住址：'), dU(p.address, 11)));
+    B.push(dL(dT('当事人是否在场：'), dU(p.present, 3)));
+    if (p.present === '不在场' || w.name) B.push(dL(dT('见证人：'), dU(w.name, 5), dT('　身份证号码：'), dU(w.idNo, 10), dT('　联系电话：'), dU(w.phone, 7)));
+    B.push({ type: 'heading', text: '现场情况：' });
+    const paras = String(r.body || '').split('\n').map(x => x.trim()).filter(Boolean);
+    if (paras.length) paras.forEach(t => B.push({ type: 'para', text: t }));
+    else for (let i = 0; i < 4; i++) B.push(dL(dU('', 29)));
+    B.push({ type: 'blank' });
+    B.push(keep(dL(dT('当事人意见：'), dU(r.partyOpinion, 22))));
+    B.push(keep(dL(dT('当事人（签名）：'), dU('', 8), dT('　　年　　月　　日'))));
+    if (p.present === '不在场' || w.name) B.push(keep(dL(dT('见证人（签名）：'), dU('', 8), dT('　　年　　月　　日'))));
+    B.push(keep(dL(dT('执法人员（签名）：'), dU('', 5), dT('　'), dU('', 5), dT('　　年　　月　　日'))));
+    B.push(dL(dT('记录人（签名）：'), dU('', 8)));
+    return { title: '现场笔录', blocks: B, footer: '当事人签名：　　　　　　执法人员签名：　　　　　　记录人签名：' };
+  }
+  function recordModel(c, r) { return r.type === 'inquiry' ? inquiryModel(c, r) : sceneModel(c, r); }
+  function modelHtml(m) {
+    return '<div class="doc-page">' + m.blocks.map(b => {
+      if (b.type === 'title') return '<div class="doc-title">' + esc(b.text) + '</div>';
+      if (b.type === 'blank') return '<div class="doc-blank"></div>';
+      if (b.type === 'heading') return '<div class="doc-line"><strong>' + esc(b.text) + '</strong></div>';
+      if (b.type === 'para') return '<div class="doc-para">' + esc(b.text) + '</div>';
+      if (b.type === 'qa') return '<div class="doc-qa"><span class="doc-qa-label">' + b.label + '：</span>' + esc(b.text).replace(/\n/g, '<br>') + '</div>';
+      return '<div class="doc-line' + (b.type === 'right' ? ' right' : '') + '">' + b.runs.map(x => x.blank ? '<span class="blank" style="width:' + Math.min(x.blank, 14) * 0.7 + 'em"></span>' : x.u ? '<span class="u">' + esc(x.text) + '</span>' : esc(x.text)).join('') + '</div>';
+    }).join('') + '<div class="doc-footer">每页页脚：' + esc(m.footer) + '　第 X 页 共 Y 页（打印时自动编页）</div></div>';
+  }
+
+  /* ---------- Word（.docx）输出：A4，宋体，每页页脚带签名栏和页码 ---------- */
+  const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const DOCX_FONT = '宋体';
+  function wRun(text, o) {
+    o = o || {};
+    const sz = o.sz || 28;
+    // rPr 子元素须按 OOXML 规定顺序：rFonts, b, bCs, sz, szCs, u
+    const rpr = '<w:rPr><w:rFonts w:ascii="' + DOCX_FONT + '" w:eastAsia="' + DOCX_FONT + '" w:hAnsi="' + DOCX_FONT + '" w:cs="' + DOCX_FONT + '"/>' +
+      (o.b ? '<w:b/><w:bCs/>' : '') + '<w:sz w:val="' + sz + '"/><w:szCs w:val="' + sz + '"/>' + (o.u ? '<w:u w:val="single"/>' : '') + '</w:rPr>';
+    return String(text == null ? '' : text).split('\n').map((t, i) => '<w:r>' + rpr + (i ? '<w:br/>' : '') + '<w:t xml:space="preserve">' + xmlEsc(t) + '</w:t></w:r>').join('');
+  }
+  function wPara(runs, o) {
+    o = o || {};
+    // pPr 子元素顺序：keepNext, spacing, ind, jc
+    let ppr = (o.keepNext ? '<w:keepNext/>' : '') + '<w:spacing w:before="' + (o.before || 0) + '" w:after="' + (o.after || 0) + '" w:line="' + (o.line || 360) + '" w:lineRule="auto"/>';
+    if (o.ind) ppr += '<w:ind' + Object.keys(o.ind).map(k => ' w:' + k + '="' + o.ind[k] + '"').join('') + '/>';
+    if (o.jc) ppr += '<w:jc w:val="' + o.jc + '"/>';
+    return '<w:p><w:pPr>' + ppr + '</w:pPr>' + runs + '</w:p>';
+  }
+  function blockXml(b) {
+    if (b.type === 'title') return wPara(wRun(b.text, { sz: 44, b: true }), { jc: 'center', after: 240 });
+    if (b.type === 'blank') return wPara('', { line: 240 });
+    if (b.type === 'heading') return wPara(wRun(b.text, { b: true }), { keepNext: true });
+    if (b.type === 'para') return wPara(wRun(b.text), { ind: { firstLine: 560 } });
+    if (b.type === 'qa') return wPara(wRun(b.label + '：', { b: b.label === '问' }) + wRun(b.text), { ind: { left: 560, hanging: 560 } });
+    return wPara(b.runs.map(x => wRun(x.text, { u: x.u, b: x.b })).join(''), { jc: b.type === 'right' ? 'right' : undefined, keepNext: !!b.keep });
+  }
+  async function modelDocx(m) {
+    const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    const fr = t => wRun(t, { sz: 21 });
+    const footer = xml + '<w:ftr xmlns:w="' + W_NS + '" xmlns:r="' + R_NS + '">' + wPara(fr(m.footer), { line: 240, after: 60 }) +
+      '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>' + fr('第 ') +
+      '<w:fldSimple w:instr=" PAGE ">' + fr('1') + '</w:fldSimple>' + fr(' 页　共 ') + '<w:fldSimple w:instr=" NUMPAGES ">' + fr('1') + '</w:fldSimple>' + fr(' 页') + '</w:p></w:ftr>';
+    const doc = xml + '<w:document xmlns:w="' + W_NS + '" xmlns:r="' + R_NS + '"><w:body>' + m.blocks.map(blockXml).join('') +
+      '<w:sectPr><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="11906" w:h="16838"/>' +
+      '<w:pgMar w:top="1440" w:right="1304" w:bottom="1701" w:left="1474" w:header="851" w:footer="851" w:gutter="0"/></w:sectPr></w:body></w:document>';
+    const styles = xml + '<w:styles xmlns:w="' + W_NS + '"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="' + DOCX_FONT + '" w:eastAsia="' + DOCX_FONT + '" w:hAnsi="' + DOCX_FONT + '" w:cs="' + DOCX_FONT + '"/>' +
+      '<w:sz w:val="28"/><w:szCs w:val="28"/><w:lang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="360" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
+      '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+    const settings = xml + '<w:settings xmlns:w="' + W_NS + '"><w:zoom w:percent="100"/><w:defaultTabStop w:val="420"/><w:characterSpacingControl w:val="compressPunctuation"/>' +
+      '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>';
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', xml + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+      '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>' +
+      '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>');
+    zip.file('_rels/.rels', xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    zip.file('word/_rels/document.xml.rels', xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
+      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>');
+    zip.file('word/document.xml', doc);
+    zip.file('word/styles.xml', styles);
+    zip.file('word/settings.xml', settings);
+    zip.file('word/footer1.xml', footer);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+  function buildRecordDocx(c, r) { return modelDocx(recordModel(c, r)); }
+  function recordFileName(c, r) {
+    const num = safeName(c.number);
+    const draft = r.status === 'final' ? '' : '（草稿）';
+    if (r.type === 'scene') return num + '_现场笔录' + draft + '.docx';
+    return num + '_询问笔录_' + safeName(r.subject.name || '未填姓名') + ((r.seq || 1) > 1 ? '_第' + r.seq + '次' : '') + draft + '.docx';
+  }
+
   /* ========================= 渲染：框架 ========================= */
   function topbar(title, back) {
     return '<header class="topbar">' +
@@ -1083,12 +1583,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       case 'templateEdit': html = viewTemplateEdit(); break;
       case 'barcodes': html = viewBarcodes(); break;
       case 'prices': html = viewPrices(); break;
+      case 'record': html = viewRecord(); break;
+      case 'recordTpl': html = viewRecordTpl(); break;
       case 'backup': html = viewBackup(); break;
       case 'me': html = viewMe(); break;
       default: html = viewCases();
     }
     root.innerHTML = html;
     if (state.view === 'cases') renderCaseList();
+    if (state.view === 'record') root.querySelectorAll('textarea').forEach(autoGrow);
   }
   function storageNotice() {
     if (Store.backend === 'memory') return '<div class="card alert-danger small"><strong>警告：当前环境无法持久保存数据</strong>，刷新或关闭页面后数据将丢失。请换用最新版 Chrome / Safari 打开，或联系管理员。</div>';
@@ -1238,18 +1741,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       (c.note ? '<div>备注</div><div class="pre">' + esc(c.note) + '</div>' : '') +
       (c.lastPackagedAt ? '<div>最近打包</div><div>' + fmtTime(c.lastPackagedAt) + '</div>' : '') + '</div>' +
       '<div class="progress' + (pct === 100 ? ' done' : '') + '"><div class="bar" style="width:' + pct + '%"></div></div>' +
-      '<div class="small" id="case-progress">必拍 ' + s.reqDone + '/' + s.reqTotal + ' · 选拍 ' + s.optDone + '/' + s.optTotal + ' · 涉案物品 ' + s.seizedCount + ' 项</div>' +
+      '<div class="small" id="case-progress">必拍 ' + s.reqDone + '/' + s.reqTotal + ' · 选拍 ' + s.optDone + '/' + s.optTotal + ' · 涉案物品 ' + s.seizedCount + ' 项' + ((c.records || []).length ? ' · 笔录 ' + c.records.length + ' 份' : '') + '</div>' +
       '<div class="btn-row"><button type="button" class="btn btn-sm" data-action="edit-info">编辑信息</button>' +
       (isAdmin() ? '<button type="button" class="btn btn-sm" data-action="assign-case" data-id="' + esc(c.id) + '">' + (c.assignedTo ? '重新分配' : '分配承办人') + '</button>' : '') +
       '<button type="button" class="btn btn-sm" data-action="reload-case">刷新</button></div></div>';
     if (st.text === '打包后有修改') html += '<div class="card alert-warn small">证据包生成后本案又有修改，请重新生成证据包。</div>';
+    html += '<nav class="quick-nav" aria-label="快速跳转">' + [['sec-photos', '照片'], ['sec-items', '涉案物品'], ['sec-records', '笔录'], ['sec-extras', '补充照片'], ['sec-log', '日志']]
+      .map(x => '<button type="button" class="btn btn-sm" data-action="jump" data-to="' + x[0] + '">' + x[1] + '</button>').join('') + '</nav>';
     html += packResultHtml();
-    c.template.categories.forEach(cat => {
-      html += '<div class="section-title"><h2>' + esc(cat.name) + '</h2></div><div class="tiles">' + cat.items.map(it => itemTileHtml(c, it)).join('') + '</div>';
+    c.template.categories.forEach((cat, ci) => {
+      html += '<div class="section-title"' + (ci === 0 ? ' id="sec-photos"' : '') + '><h2>' + esc(cat.name) + '</h2></div><div class="tiles">' + cat.items.map(it => itemTileHtml(c, it)).join('') + '</div>';
     });
     html += seizedSectionHtml(c);
+    html += recordsSectionHtml(c);
     html += extrasSectionHtml(c);
-    html += '<div class="card" style="margin-top:16px"><details><summary>操作日志（' + c.log.length + ' 条）</summary>' +
+    html += '<div class="card" id="sec-log" style="margin-top:16px"><details><summary>操作日志（' + c.log.length + ' 条）</summary>' +
       c.log.slice().reverse().map(l => '<div class="log-line">' + fmtTime(l.at) + ' · ' + esc(l.byName) + ' · ' + esc(l.action) + (l.detail ? '：' + esc(l.detail) : '') + '</div>').join('') + '</details></div>';
     if (canDeleteCase(c)) html += '<button type="button" class="btn btn-danger-outline btn-block" data-action="delete-case">删除本案件</button>';
     html += '</div><div class="actionbar"><div class="inner"><button type="button" class="btn btn-primary" data-action="package">校验并生成证据包</button></div></div>';
@@ -1273,7 +1779,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function seizedSectionHtml(c) {
     const req = c.template.requiresSeizedItems;
-    let html = '<div class="section-title"><h2>涉案物品录入' + (req ? ' <span class="badge req">必填</span>' : '') + '</h2>' +
+    let html = '<div class="section-title" id="sec-items"><h2>涉案物品录入' + (req ? ' <span class="badge req">必填</span>' : '') + '</h2>' +
       '<button type="button" class="btn btn-sm btn-primary" data-action="seized-add">＋ 登记</button></div><div class="card" id="seized-list">';
     if (!c.seizedItems.length) {
       html += '<div class="muted small">' + (req ? '本类案件须登记涉案物品（卷烟、烟叶、烟丝、空管烟、电子烟等）的名称和数量，未登记无法生成证据包。' : '如有涉案物品请登记。') + '</div>';
@@ -1301,7 +1807,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return html + '</div>';
   }
   function extrasSectionHtml(c) {
-    let html = '<div class="section-title"><h2>补充照片 <span class="badge opt">可选</span></h2><div class="row">' +
+    let html = '<div class="section-title" id="sec-extras"><h2>补充照片 <span class="badge opt">可选</span></h2><div class="row">' +
       '<button type="button" class="btn btn-sm" data-action="capture" data-src="camera" data-kind="extra">拍照</button>' +
       '<button type="button" class="btn btn-sm" data-action="capture" data-src="album" data-kind="extra">相册</button></div></div>';
     if (!c.extras.length) return html + '<div class="card muted small">清单以外需要补充的现场照片可在此添加，会一并打入证据包。</div>';
@@ -1315,6 +1821,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const canShare = state.lastPackage && navigator.canShare && (() => { try { return navigator.canShare({ files: [state.lastPackage.file] }); } catch (e) { return false; } })();
       return '<div class="card alert-ok" id="pack-result"><strong>证据包已生成</strong><div class="small break">' + esc(r.filename) + '（' + fmtSize(r.size) + '，照片 ' + r.photos + ' 张）</div>' +
         (r.sheet ? '<div class="small break">含核价表：' + esc(r.sheet) + '（涉案金额 ' + fmtMoney(r.amount) + ' 元）</div>' : '') +
+        (r.records ? '<div class="small">含笔录 ' + r.records + ' 份（Word）</div>' : '') +
+        (r.recDrafts ? '<div class="small warn-text">提示：有 ' + r.recDrafts + ' 份笔录尚未定稿，文件名已标"草稿"。</div>' : '') +
         (r.unpriced ? '<div class="small warn-text">提示：有 ' + r.unpriced + ' 项涉案物品未核价，核价表中已标"待核"。</div>' : '') +
         (r.optionalMissing ? '<div class="small warn-text">提示：有 ' + r.optionalMissing + ' 个选拍项未拍（不影响打包）。</div>' : '') +
         '<div class="btn-row"><button type="button" class="btn btn-sm" data-action="download-again">再次下载</button>' +
@@ -1332,6 +1840,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return topbar('管理') + '<div class="content">' +
       m('users', '用户管理', '添加稽查人员、重置 PIN、调整角色（共 ' + state.users.length + ' 人）') +
       m('templates', '案件模板', '维护各类案件的必拍 / 选拍清单（共 ' + state.templates.length + ' 类）') +
+      m('recordTpl', '笔录模板', '询问笔录告知语、通用问题和各类案件的询问提纲') +
       m('prices', '价格目录与核价表', (activeCatalog().version || '') + '价格目录 ' + activeCatalog().items.length + ' 个品规；烟叶/烟丝/空管烟/电子烟标准价；核价表设置') +
       m('barcodes', '本地条码库', '价格目录以外的条码，录入一次后自动带出（' + Object.keys(state.barcodeDict).length + ' 条）') +
       m('backup', '数据备份与还原', '导出 / 导入全部数据，重建案件索引') +
@@ -1340,8 +1849,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function viewUsers() {
     const list = state.users.map(u => '<div class="list-item"><div class="grow"><div><strong>' + esc(u.name) + '</strong> <span class="badge ' + (u.role === 'admin' ? 'admin' : '') + '">' + roleText(u.role) + '</span>' +
-      (u.id === state.user.id ? ' <span class="badge ok">当前</span>' : '') + '</div><div class="muted small">创建于 ' + fmtDate(u.createdAt) + '</div></div>' +
-      '<div class="row"><button type="button" class="btn btn-sm" data-action="user-reset" data-id="' + esc(u.id) + '">重置PIN</button>' +
+      (u.id === state.user.id ? ' <span class="badge ok">当前</span>' : '') + '</div><div class="muted small">执法证号：' + (u.certNo ? esc(u.certNo) : '<span class="warn-text">未填</span>') + ' · 创建于 ' + fmtDate(u.createdAt) + '</div></div>' +
+      '<div class="row"><button type="button" class="btn btn-sm" data-action="user-cert" data-id="' + esc(u.id) + '">执法证号</button><button type="button" class="btn btn-sm" data-action="user-reset" data-id="' + esc(u.id) + '">重置PIN</button>' +
       '<button type="button" class="btn btn-sm" data-action="user-role" data-id="' + esc(u.id) + '">设为' + (u.role === 'admin' ? '稽查人员' : '管理员') + '</button>' +
       '<button type="button" class="btn btn-sm btn-danger-outline" data-action="user-del" data-id="' + esc(u.id) + '">删除</button></div></div>').join('');
     return topbar('用户管理', 'admin') + '<div class="content"><div class="card">' + list + '</div>' +
@@ -1349,6 +1858,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<label class="field"><span>姓名</span><input type="text" name="name" maxlength="20" required></label>' +
       '<label class="field"><span>角色</span><select name="role"><option value="inspector">稽查人员</option><option value="admin">管理员</option></select></label>' +
       '<label class="field"><span>初始 PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
+      '<label class="field"><span>执法证号（可选，制作笔录时自动带入）</span><input type="text" name="certNo" maxlength="30"></label>' +
       '<button type="submit" class="btn btn-primary btn-block"' + (hasSubtle() ? '' : ' disabled') + '>添加</button></form></div>';
   }
   function viewTemplates() {
@@ -1498,11 +2008,164 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<button type="button" class="btn btn-block" data-action="rebuild-index">重建案件索引</button></div></div>';
   }
 
+  /* ========================= 视图：笔录 ========================= */
+  function recordsSectionHtml(c) {
+    const recs = (c.records || []).slice().sort((a, b) => a.type === b.type ? (a.startAt || 0) - (b.startAt || 0) : (a.type === 'scene' ? -1 : 1));
+    let html = '<div class="section-title" id="sec-records"><h2>现场笔录与询问笔录</h2></div><div class="card" id="records-card">';
+    if (!recs.length) html += '<p class="muted small" style="margin-top:0">现场笔录记录检查经过；询问笔录按案件类型给出问题提纲。执法人员、当事人、涉案物品等信息自动带入，生成 Word 后打印签字。</p>';
+    html += recs.map(x => {
+      const who = x.name ? esc(x.name) + (x.type === 'inquiry' && x.role && x.role !== '当事人' ? '（' + esc(x.role) + '）' : '') : (x.type === 'inquiry' ? '<span class="warn-text">未填姓名</span>' : '');
+      return '<div class="list-item rec-item"><div class="grow"><div><strong>' + REC_TYPES[x.type] + '</strong>' + (who ? '　' + who : '') + (x.type === 'inquiry' && x.seq > 1 ? '　第' + x.seq + '次' : '') +
+        ' <span class="badge ' + (x.status === 'final' ? 'ok' : 'draft') + '">' + (x.status === 'final' ? '已定稿' : '草稿') + '</span></div>' +
+        '<div class="muted small">' + (x.startAt ? fmtDate(x.startAt) : '') + (x.type === 'inquiry' ? ' · 已答 ' + x.answered + '/' + x.total + ' 问' : '') + '</div></div>' +
+        '<button type="button" class="btn btn-sm" data-action="rec-open" data-id="' + esc(x.id) + '">' + (x.status === 'final' ? '查看' : '继续') + '</button></div>';
+    }).join('');
+    return html + '<div class="btn-row"><button type="button" class="btn" data-action="rec-new" data-type="scene">＋ 现场笔录</button>' +
+      '<button type="button" class="btn btn-primary" data-action="rec-new" data-type="inquiry">＋ 询问笔录</button></div></div>';
+  }
+  function saveIndText() {
+    const s = state.recSave || {};
+    if (s.status === 'editing') return '编辑中…';
+    if (s.status === 'fail') return '<span class="danger-text">保存失败</span>';
+    if (s.status === 'saved') return '已自动保存 ' + fmtTime(s.at).slice(11);
+    return '输入内容自动保存';
+  }
+  function viewRecord() {
+    const c = state.caseData, r = state.recordData;
+    if (!c || !r) return topbar('笔录', 'case') + '<div class="content"><div class="empty">正在读取笔录…</div></div>';
+    const locked = r.status === 'final'; const D = locked ? ' disabled' : '';
+    let html = topbar(recordTitle(r), 'case') + '<div class="content rec-editor' + (locked ? ' locked' : '') + '">' +
+      '<div class="card small"><div class="row between nowrap"><span class="grow break">' + esc(c.number) + ' · ' + esc(c.typeName) + '</span><span id="save-ind" class="muted">' + saveIndText() + '</span></div>' +
+      (locked ? '<div class="warn-text" style="margin-top:4px">已于 ' + fmtTime(r.finalAt) + ' 由 ' + esc(r.finalByName || '') + ' 定稿，内容已锁定；如需修改请先"解除定稿"。</div>' : '') + '</div>';
+    html += recBasicCardHtml(c, r, D);
+    if (r.type === 'inquiry') html += inquirySubjectCardHtml(r, D) + qaSectionHtml(c, r, D);
+    else html += scenePartyCardHtml(r, D) + sceneFactsCardHtml(c, r, D) + sceneBodyCardHtml(c, r, D);
+    html += '<div class="btn-row" style="margin-top:16px">' + (locked ? '<button type="button" class="btn btn-danger-outline" data-action="rec-unfinal">解除定稿</button>' :
+      '<button type="button" class="btn" data-action="rec-final">定稿（锁定内容）</button><button type="button" class="btn btn-danger-outline" data-action="rec-del">删除笔录</button>') + '</div>';
+    return html + '</div><div class="actionbar"><div class="inner"><button type="button" class="btn" data-action="rec-preview">预览</button>' +
+      '<button type="button" class="btn btn-primary" data-action="rec-docx">生成 Word</button></div></div>';
+  }
+  function recBasicCardHtml(c, r, D) {
+    const inq = r.type === 'inquiry';
+    const sel = new Set(r.officers.map(o => o.id));
+    const chips = state.users.map(u => '<button type="button" class="btn btn-sm chip' + (sel.has(u.id) ? ' active' : '') + '" data-action="rec-officer" data-id="' + esc(u.id) + '"' + D + '>' + esc(u.name) + '</button>').join('') +
+      '<button type="button" class="btn btn-sm chip" data-action="rec-officer-add"' + D + '>＋ 其他人员</button>';
+    const rows = r.officers.map((o, i) => '<div class="officer-row"><input type="text" data-rf="officers.' + i + '.name" value="' + esc(o.name) + '" placeholder="姓名" aria-label="执法人员姓名"' + (o.manual ? '' : ' readonly') + D + '>' +
+      '<input type="text" data-rf="officers.' + i + '.certNo" value="' + esc(o.certNo) + '" placeholder="执法证号" aria-label="执法证号"' + D + '>' +
+      '<button type="button" class="btn btn-sm" data-action="rec-officer-del" data-i="' + i + '" aria-label="移除"' + D + '>✕</button></div>').join('');
+    const named = r.officers.filter(o => String(o.name || '').trim()).length;
+    return '<div class="card"><details open><summary>基本信息</summary>' +
+      '<label class="field"><span>' + (inq ? '询问' : '检查') + '开始时间</span><input type="datetime-local" data-rf="startAt" data-kind="dt" value="' + dtLocal(r.startAt) + '"' + D + '></label>' +
+      '<div class="field"><span class="muted small">结束时间</span><div class="row nowrap"><input type="datetime-local" class="grow" data-rf="endAt" data-kind="dt" value="' + dtLocal(r.endAt) + '" aria-label="结束时间"' + D + '>' +
+      '<button type="button" class="btn btn-sm" data-action="rec-now" data-rf="endAt"' + D + '>现在</button></div></div>' +
+      '<div class="field"><span class="muted small">' + (inq ? '询问' : '检查') + '地点</span><div class="row nowrap"><input type="text" class="grow" data-rf="place" value="' + esc(r.place) + '" aria-label="地点"' + D + '>' +
+      '<button type="button" class="btn btn-sm" data-action="rec-geo"' + D + '>附坐标</button></div></div>' +
+      '<div class="field"><span class="muted small">' + (inq ? '询问人' : '执法人员') + '（点选，不少于 2 人）</span><div class="chips">' + chips + '</div>' + rows +
+      (named < 2 ? '<div class="warn-text small" style="margin-top:4px">执法人员应不少于 2 人</div>' : '') + '</div>' +
+      '<label class="field"><span>记录人</span><input type="text" data-rf="recorder" list="rec-users" value="' + esc(r.recorder) + '"' + D + '><datalist id="rec-users">' + state.users.map(u => '<option value="' + esc(u.name) + '">').join('') + '</datalist></label>' +
+      (inq ? '<div class="row nowrap"><label class="field grow"><span>其他在场人员</span><input type="text" data-rf="others" value="' + esc(r.others) + '"' + D + '></label>' +
+        '<label class="field" style="width:96px"><span>第几次询问</span><input type="number" min="1" inputmode="numeric" data-rf="seq" data-kind="int" value="' + esc(r.seq) + '"' + D + '></label></div>' : '') +
+      '</details></div>';
+  }
+  function idMsgHtml(v) {
+    if (!String(v || '').trim()) return '';
+    const p = parseIdNo(v);
+    if (!p) return '<span class="warn-text">号码应为 18 位（最后一位可为 X）</span>';
+    if (!p.valid) return '<span class="warn-text">校验不通过，请核对是否输错</span>';
+    return '<span class="ok-text">✓ 校验通过</span>';
+  }
+  function personFieldsHtml(prefix, p, D, full) {
+    const f = (key, label, extra) => '<label class="field"><span>' + label + '</span><input type="text" data-rf="' + prefix + '.' + key + '" value="' + esc(p[key] || '') + '"' + (extra || '') + D + '></label>';
+    let html = f('name', '姓名') + f('idNo', '身份证号码', ' maxlength="18" autocomplete="off"') + '<div class="small id-msg" id="idmsg-' + prefix + '">' + idMsgHtml(p.idNo) + '</div>';
+    if (full) {
+      html += '<div class="field"><span class="muted small">性别（填身份证号码后自动识别）</span><div class="seg">' + ['男', '女'].map(g => '<button type="button" class="btn' + (p.gender === g ? ' active' : '') + '" data-action="rf-chip" data-rf="' + prefix + '.gender" data-v="' + g + '"' + D + '>' + g + '</button>').join('') + '</div></div>' +
+        '<div class="row nowrap"><label class="field grow"><span>出生日期</span><input type="date" data-rf="' + prefix + '.birth" value="' + esc(p.birth || '') + '"' + D + '></label>' +
+        '<label class="field" style="width:96px"><span>民族</span><input type="text" data-rf="' + prefix + '.ethnic" value="' + esc(p.ethnic || '') + '" placeholder="汉"' + D + '></label></div>' +
+        f('job', '工作单位或职业') + f('address', '住址');
+    }
+    return html + f('phone', '联系电话', ' inputmode="tel"');
+  }
+  function inquirySubjectCardHtml(r, D) {
+    return '<div class="card"><details open><summary>被询问人</summary><div class="field"><span class="muted small">身份</span><div class="chips">' +
+      SUBJECT_ROLES.map(x => '<button type="button" class="btn btn-sm chip' + (r.subject.role === x ? ' active' : '') + '" data-action="rf-chip" data-rf="subject.role" data-v="' + x + '" data-keep="1"' + D + '>' + x + '</button>').join('') + '</div></div>' +
+      personFieldsHtml('subject', r.subject, D, true) + '</details></div>';
+  }
+  function hintLabel(h) { return h === '@物品清单' ? '填入物品清单' : h === '@本人信息' ? '填入本人信息' : h; }
+  function qaSectionHtml(c, r, D) {
+    const answered = r.qa.filter(x => String(x.a || '').trim()).length;
+    return '<div class="section-title"><h2>问答</h2><span class="muted small" id="qa-count">已答 ' + answered + '/' + r.qa.length + '</span></div>' +
+      '<p class="muted small" style="margin-top:-4px">问题按"' + esc(c.typeName) + '"提纲排列，未回答的问题不会写入笔录；点常用回答可一键填入，也可用手机键盘的语音输入。</p>' +
+      r.qa.map((x, i) => qaItemHtml(x, i, D)).join('') +
+      (D ? '' : '<button type="button" class="btn btn-block" data-action="qa-add">＋ 添加问题</button>');
+  }
+  function qaItemHtml(x, i, D) {
+    const editing = state.qaEditing === x.id && !D;
+    const answered = !!String(x.a || '').trim();
+    return '<div class="card qa-card' + (answered ? ' answered' : '') + '" id="qa-' + esc(x.id) + '">' +
+      '<div class="qa-q"><span class="qa-no">' + (i + 1) + '</span>' + (editing ? '<textarea class="grow" data-qa="' + esc(x.id) + '" data-qf="q" rows="2" aria-label="问题">' + esc(x.q) + '</textarea>' :
+        '<div class="qa-qtext grow" data-qtext="' + esc(x.id) + '">' + esc(x.q) + '</div>') + '</div>' +
+      '<textarea class="qa-a" data-qa="' + esc(x.id) + '" data-qf="a" rows="2" placeholder="答：" aria-label="回答"' + D + '>' + esc(x.a) + '</textarea>' +
+      (D ? '' : '<div class="qa-tools"><div class="qa-hints">' + x.hints.map(h => '<button type="button" class="btn btn-sm chip" data-action="qa-hint" data-qa="' + esc(x.id) + '" data-v="' + esc(h) + '">' + esc(hintLabel(h)) + '</button>').join('') + '</div>' +
+        '<div class="qa-ops"><button type="button" class="btn btn-sm" data-action="qa-edit" data-qa="' + esc(x.id) + '">' + (editing ? '完成' : '改问题') + '</button>' +
+        '<button type="button" class="btn btn-sm" data-action="qa-up" data-qa="' + esc(x.id) + '" aria-label="上移"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+        '<button type="button" class="btn btn-sm btn-danger-outline" data-action="qa-del" data-qa="' + esc(x.id) + '" aria-label="删除问题">✕</button></div></div>') + '</div>';
+  }
+  function scenePartyCardHtml(r, D) {
+    const absent = r.party.present === '不在场';
+    return '<div class="card"><details open><summary>当事人与见证人</summary><div class="field"><span class="muted small">当事人是否在场</span><div class="seg">' +
+      ['在场', '不在场'].map(v => '<button type="button" class="btn' + (r.party.present === v ? ' active' : '') + '" data-action="rf-chip" data-rf="party.present" data-v="' + v + '" data-keep="1"' + D + '>' + v + '</button>').join('') + '</div></div>' +
+      personFieldsHtml('party', r.party, D, true) +
+      '<h3 style="margin:12px 0 8px">见证人' + (absent ? ' <span class="badge req">当事人不在场时应有见证人</span>' : ' <span class="muted small">（可选）</span>') + '</h3>' +
+      personFieldsHtml('witness', r.witness, D, false) + '</details></div>';
+  }
+  function sceneFactsCardHtml(c, r, D) {
+    const fields = sceneFieldsFor(c.typeId).map(f => {
+      const v = r.facts[f.key];
+      if (f.type === 'text') return '<label class="field"><span>' + esc(f.label) + '</span><input type="text" data-rf="facts.' + f.key + '" value="' + esc(v || '') + '"' + (f.inputmode ? ' inputmode="' + f.inputmode + '"' : '') + ' placeholder="' + esc(f.placeholder || '') + '"' + D + '></label>';
+      if (f.type === 'textarea') return '<label class="field"><span>' + esc(f.label) + '</span><textarea data-rf="facts.' + f.key + '" rows="3" placeholder="' + esc(f.placeholder || '') + '"' + D + '>' + esc(v || '') + '</textarea></label>';
+      const arr = f.type === 'multi' ? (Array.isArray(v) ? v : []) : [v];
+      return '<div class="field"><span class="muted small">' + esc(f.label) + (f.type === 'multi' ? '（可多选）' : '') + '</span><div class="chips">' +
+        f.options.map(o => '<button type="button" class="btn btn-sm chip' + (arr.includes(o) ? ' active' : '') + '" data-action="rf-chip" data-rf="facts.' + f.key + '" data-v="' + esc(o) + '"' + (f.type === 'multi' ? ' data-multi="1"' : '') + D + '>' + esc(o) + '</button>').join('') + '</div>' +
+        (arr.includes('其他') ? '<input type="text" style="margin-top:6px" data-rf="factsOther.' + f.key + '" value="' + esc(r.factsOther[f.key] || '') + '" placeholder="请填写' + esc(f.label) + '"' + D + '>' : '') + '</div>';
+    }).join('');
+    const ms = r.measures || [];
+    return '<div class="card"><details open><summary>现场检查情况（' + esc(c.typeName) + '）</summary>' + fields +
+      '<div class="field"><span class="muted small">采取的措施（可多选）</span><div class="chips">' + MEASURES.map(m => '<button type="button" class="btn btn-sm chip' + (ms.includes(m) ? ' active' : '') + '" data-action="rf-chip" data-rf="measures" data-v="' + m + '" data-multi="1"' + D + '>' + m + '</button>').join('') + '</div></div>' +
+      (ms.includes('先行登记保存') || ms.includes('扣押') ? '<label class="field"><span>文书编号（可选）</span><input type="text" data-rf="measureDocNo" value="' + esc(r.measureDocNo) + '" placeholder="填写已制作文书上的编号"' + D + '></label>' : '') +
+      (ms.includes('其他') ? '<label class="field"><span>其他措施</span><input type="text" data-rf="measureOther" value="' + esc(r.measureOther) + '"' + D + '></label>' : '') +
+      '</details></div>';
+  }
+  function sceneBodyCardHtml(c, r, D) {
+    return '<div class="card"><div class="row between"><h3 style="margin:0">现场情况（笔录正文）</h3>' + (D ? '' : '<button type="button" class="btn btn-sm btn-primary" data-action="scene-draft">' + (r.body.trim() ? '重新生成草稿' : '生成草稿') + '</button>') + '</div>' +
+      '<p class="muted small">根据上面的检查情况、本案登记的涉案物品、照片数量和采取的措施自动生成，生成后可直接修改。</p>' +
+      '<textarea class="body-text" data-rf="body" rows="8" placeholder="' + esc('点"生成草稿"，或直接书写现场情况') + '" aria-label="现场情况"' + D + '>' + esc(r.body) + '</textarea>' +
+      '<div class="field" style="margin-top:12px"><span class="muted small">当事人意见</span>' + (D ? '' : '<div class="chips" style="margin-bottom:6px">' + OPINION_OPTS.map(v => '<button type="button" class="btn btn-sm chip" data-action="rec-set-text" data-rf="partyOpinion" data-v="' + v + '">' + v + '</button>').join('') + '</div>') +
+      '<textarea data-rf="partyOpinion" rows="2" placeholder="也可留空，由当事人在打印件上手写" aria-label="当事人意见"' + D + '>' + esc(r.partyOpinion) + '</textarea></div></div>';
+  }
+  function viewRecordTpl() {
+    if (!isAdmin()) return viewCases();
+    return topbar('笔录模板', 'admin') + '<div class="content">' +
+      '<div class="card small"><p style="margin-top:0">询问笔录的问题按"告知语 → 告知后的通用问题 → 案件类型提纲 → 结尾通用问题"顺序生成，稽查人员可在现场增删、修改。</p>' +
+      '<ul style="padding-left:20px;margin:0"><li>每行一个问题；问题后用"｜"分隔常用回答，如：你是否申请执法人员回避？｜不申请</li>' +
+      '<li>可自动替换：{单位} {执法人员} {案由} {日期} {地点} {当事人} {物品清单}</li>' +
+      '<li>常用回答写 @物品清单 或 @本人信息，可一键填入本案登记的涉案物品或被询问人信息</li>' +
+      '<li>默认内容为示例，请按本单位询问笔录模板和办案要求修改；修改只影响之后新建的笔录。</li></ul></div>' +
+      '<form class="card" data-form="recordTpl">' +
+      '<label class="field"><span>告知语（询问的第一个问题）</span><textarea name="notice" rows="7">' + esc(noticeLine()) + '</textarea></label>' +
+      '<label class="field"><span>告知后的通用问题</span><textarea name="open" rows="3">' + esc(openLines().join('\n')) + '</textarea></label>' +
+      state.templates.map(t => '<label class="field"><span>' + esc(t.name) + '：询问提纲</span><textarea name="q_' + esc(t.id) + '" rows="9">' + esc(typeQuestionLines(t.id).join('\n')) + '</textarea></label>').join('') +
+      '<label class="field"><span>结尾通用问题</span><textarea name="close" rows="3">' + esc(closeLines().join('\n')) + '</textarea></label>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="rectpl-reset">恢复默认</button><button type="submit" class="btn btn-primary">保存</button></div></form></div>';
+  }
+
   /* ========================= 视图：我的 / 关于 ========================= */
   function viewMe() {
     const backendText = { host: '宿主共享存储（同一链接下多人共享）', indexeddb: '本机浏览器存储（仅本设备可见）', memory: '内存（刷新即丢失）' }[Store.backend];
     return topbar('我的') + '<div class="content"><div class="card"><div class="row between"><div><strong>' + esc(state.user.name) + '</strong> <span class="badge ' + (isAdmin() ? 'admin' : '') + '">' + roleText(state.user.role) + '</span></div>' +
       '<button type="button" class="btn btn-sm" data-action="logout">退出登录</button></div></div>' +
+      '<form class="card" data-form="myCert"><h3>我的执法证号</h3><p class="small muted" style="margin-top:0">制作现场笔录、询问笔录时自动带入。</p>' +
+      '<label class="field"><span>执法证号</span><input type="text" name="certNo" maxlength="30" value="' + esc(state.user.certNo || '') + '"></label>' +
+      '<button type="submit" class="btn btn-primary btn-block">保存</button></form>' +
       '<div class="card"><h3>拍照设置</h3><label class="check"><input type="checkbox" data-pref="geo"' + (state.prefs.geo ? ' checked' : '') + '>拍照时记录位置（需允许浏览器定位；拒绝不影响拍照）</label></div>' +
       '<form class="card" data-form="changePin"><h3>修改我的 PIN</h3>' +
       '<label class="field"><span>原 PIN</span><input type="password" name="old" inputmode="numeric" maxlength="6" autocomplete="current-password"></label>' +
@@ -1518,7 +2181,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<li>条码识别依赖浏览器的 BarcodeDetector 功能（部分安卓 Chrome 支持，iPhone 一般不支持），不支持时请手工输入条码。</li>' +
       '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
       '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li>' +
-      '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），烟叶、烟丝、空管烟、电子烟按管理员维护的标准价计价；核价表须由经办人核对后签字盖章；卷烟包、支按每条 10 包、每包 20 支折算。</li></ol></div></div>' + tabbar();
+      '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），烟叶、烟丝、空管烟、电子烟按管理员维护的标准价计价；核价表须由经办人核对后签字盖章；卷烟包、支按每条 10 包、每包 20 支折算。</li>' +
+      '<li>现场笔录、询问笔录的格式和问题提纲为通用示例，请按本单位模板核对；系统生成的 Word 是电子文本，须打印后由相关人员签名（捺印），系统不提供电子签名。</li></ol></div></div>' + tabbar();
   }
 
   /* ========================= 弹窗：涉案物品录入 ========================= */
@@ -1923,7 +2587,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const c = state.caseData;
     if (!canDeleteCase(c)) { toast('无权删除该案件', 'error'); return; }
     const n = Object.keys(c.evidence).length + c.seizedItems.length + c.extras.length;
-    if (!(await confirmDialog('确定删除案件"' + c.number + '"吗？\n该案件的 ' + n + ' 条照片/登记记录将一并删除，且无法恢复。', { danger: true, okText: '删除案件', title: '删除案件' }))) return;
+    const nr = (c.records || []).length;
+    if (!(await confirmDialog('确定删除案件"' + c.number + '"吗？\n该案件的 ' + n + ' 条照片/登记记录' + (nr ? '和 ' + nr + ' 份笔录' : '') + '将一并删除，且无法恢复。', { danger: true, okText: '删除案件', title: '删除案件' }))) return;
     showBusy('正在删除…');
     try {
       const ids = [];
@@ -1931,12 +2596,202 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       c.seizedItems.forEach(s => s.photoId && ids.push(s.photoId));
       c.extras.forEach(x => x.photoId && ids.push(x.photoId));
       for (const id of ids) await Store.del(photoKey(id), true);
+      for (const x of (c.records || [])) await Store.del(recKey(x.id), true);
       await Store.del(caseKey(c.id), true);
       await syncIndexEntry(c, true);
     } finally { hideBusy(); }
     toast('已删除案件', 'ok');
     state.caseData = null;
     go('cases', {}, true);
+  }
+
+  /* ========================= 笔录动作 ========================= */
+  let recTimer = null, recSyncNeeded = false;
+  function setSaveInd(status) { state.recSave = { status, at: Date.now() }; const el = $('#save-ind'); if (el) el.innerHTML = saveIndText(); }
+  // 输入后 0.7 秒自动保存正文；案件中的摘要在离开编辑页、定稿等时同步
+  function touchRecord() { recSyncNeeded = true; setSaveInd('editing'); clearTimeout(recTimer); recTimer = setTimeout(() => run(saveRecordNow), 700); }
+  async function saveRecordNow() {
+    clearTimeout(recTimer); recTimer = null;
+    const r = state.recordData; if (!r) return true;
+    r.updatedAt = Date.now();
+    const ok = await setJSON(recKey(r.id), r, true);
+    setSaveInd(ok ? 'saved' : 'fail');
+    return ok;
+  }
+  async function flushRecord(logAction, logDetail) {
+    const r = state.recordData, c = state.caseData;
+    if (!r) return true;
+    if (recTimer && !(await saveRecordNow())) return false;
+    if (!c || (!recSyncNeeded && !logAction)) return true;
+    recSyncNeeded = false;
+    const saved = await mutateCase(c.id, cc => {
+      cc.records = cc.records || [];
+      const i = cc.records.findIndex(x => x.id === r.id);
+      const sum = recordSummary(r);
+      if (i >= 0) cc.records[i] = sum; else cc.records.push(sum);
+      if (logAction) addLog(cc, logAction, logDetail || recordTitle(r));
+    });
+    if (!saved) recSyncNeeded = true;
+    return !!saved;
+  }
+  async function newRecord(type) {
+    const c = state.caseData; if (!c || !REC_TYPES[type]) return;
+    const r = createRecord(type, c);
+    if (!(await setJSON(recKey(r.id), r, true))) return;
+    const saved = await mutateCase(c.id, cc => { cc.records = cc.records || []; cc.records.push(recordSummary(r)); addLog(cc, '新建' + REC_TYPES[type], recordTitle(r)); });
+    if (!saved) return;
+    Object.assign(state, { recordData: r, recordId: r.id, recSave: null, qaEditing: null });
+    recSyncNeeded = false;
+    go('record', { recordId: r.id });
+    toast(type === 'inquiry' ? '已按"' + c.typeName + '"提纲生成 ' + r.qa.length + ' 个问题' : '已带入案件信息，请补充现场检查情况', 'ok', 2500);
+  }
+  async function openRecord(id, fromPop) {
+    const c = state.caseData;
+    const doc = normalizeRecord(await getJSON(recKey(id), true, null));
+    if (!doc) { toast('笔录数据读取失败或已被删除', 'error'); return; }
+    Object.assign(state, { recordData: doc, recordId: id, recSave: null, qaEditing: null });
+    // 摘要与正文不一致（如上次未正常退出）时，离开时再同步一次
+    const cur = c && (c.records || []).find(x => x.id === id);
+    recSyncNeeded = !cur || JSON.stringify(cur) !== JSON.stringify(recordSummary(doc));
+    if (fromPop) { state.view = 'record'; render(); window.scrollTo(0, 0); } else go('record', { recordId: id });
+  }
+  async function leaveRecord() {
+    if (state.recordData) await flushRecord();
+    Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
+  }
+  function getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
+  function setPath(obj, path, v) {
+    const ks = path.split('.'); let o = obj;
+    for (let i = 0; i < ks.length - 1; i++) { if (o[ks[i]] == null) o[ks[i]] = {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = v;
+  }
+  function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, 640) + 'px'; }
+  function renderKeepScroll() { const y = window.scrollY; render(); window.scrollTo(0, y); }
+  function updateQaCount() {
+    const r = state.recordData; const el = $('#qa-count');
+    if (el && r && r.qa) el.textContent = '已答 ' + r.qa.filter(x => String(x.a || '').trim()).length + '/' + r.qa.length;
+  }
+  // 执法人员、地点变化后，未手工改过的问题（如告知语中的执法人员姓名）随之更新
+  function refreshQuestionTexts() {
+    const c = state.caseData, r = state.recordData; if (!c || !r || r.type !== 'inquiry') return;
+    const ctx = recordCtx(c, r);
+    r.qa.forEach(x => {
+      if (x.edited || !x.qTpl) return;
+      x.q = fillVars(x.qTpl, ctx);
+      const el = root.querySelector('[data-qtext="' + x.id + '"]'); if (el) el.textContent = x.q;
+    });
+  }
+  function onIdInput(prefix) {
+    const r = state.recordData; const p = r[prefix];
+    const msg = $('#idmsg-' + prefix); if (msg) msg.innerHTML = idMsgHtml(p.idNo);
+    const info = parseIdNo(p.idNo);
+    if (!info || !info.valid || prefix === 'witness') return;
+    p.gender = info.gender; p.birth = info.birth;
+    const b = root.querySelector('[data-rf="' + prefix + '.birth"]'); if (b) b.value = info.birth;
+    root.querySelectorAll('[data-rf="' + prefix + '.gender"]').forEach(btn => btn.classList.toggle('active', btn.dataset.v === info.gender));
+  }
+  function onRecordInput(el) {
+    const r = state.recordData; if (!r || r.status === 'final') return;
+    if (el.dataset.qa) {
+      const x = r.qa.find(q => q.id === el.dataset.qa); if (!x) return;
+      if (el.dataset.qf === 'q') { x.q = el.value; x.edited = true; }
+      else { x.a = el.value; updateQaCount(); const card = el.closest('.qa-card'); if (card) card.classList.toggle('answered', !!x.a.trim()); }
+      autoGrow(el); touchRecord(); return;
+    }
+    const path = el.dataset.rf;
+    let v = el.value;
+    if (el.dataset.kind === 'dt') v = parseDtLocal(v);
+    else if (el.dataset.kind === 'int') v = Math.max(1, parseInt(v, 10) || 1);
+    setPath(r, path, v);
+    if (el.tagName === 'TEXTAREA') autoGrow(el);
+    const m = path.match(/^(subject|party|witness)\.idNo$/);
+    if (m) onIdInput(m[1]);
+    if (path === 'place' || /^officers\./.test(path)) refreshQuestionTexts();
+    touchRecord();
+  }
+  async function appendGeoToPlace() {
+    const r = state.recordData, c = state.caseData; if (!r || r.status === 'final') return;
+    const withGeo = Object.values(c.evidence || {}).concat(c.seizedItems || [], c.extras || []).filter(x => x && x.geo).sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0));
+    let g = withGeo.length ? withGeo[0].geo : null;
+    if (!g) { showBusy('正在定位…'); try { g = await getGeo(true); } finally { hideBusy(); } }
+    if (!g) { toast('无法获取位置：本案照片没有定位信息，浏览器定位也不可用', 'warn', 4000); return; }
+    r.place = String(r.place || '').replace(/（坐标：[^）]*）/, '') + '（坐标：' + Number(g.lat).toFixed(6) + ', ' + Number(g.lng).toFixed(6) + '）';
+    touchRecord(); renderKeepScroll();
+  }
+  function showQaAddModal() {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    const have = new Set(r.qa.map(x => x.qTpl || x.q));
+    const ctx = recordCtx(c, r);
+    const lines = typeQuestionLines(c.typeId).concat(openLines(), closeLines()).filter(l => !have.has(splitQLine(l).q));
+    showModal('<h3>添加问题</h3>' + (lines.length ? '<p class="small muted">提纲中尚未使用的问题，点选即可加入：</p><div class="match-list">' +
+      lines.map(l => '<button type="button" class="btn btn-sm btn-block match-pick" data-action="qa-add-pick" data-line="' + esc(l) + '">' + esc(fillVars(splitQLine(l).q, ctx)) + '</button>').join('') + '</div>' : '') +
+      '<form data-form="qaCustom" style="margin-top:12px"><label class="field"><span>自定义问题</span><textarea name="q" rows="3" placeholder="输入要问的问题"></textarea></label>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">添加</button></div></form>', 'form');
+  }
+  function addQuestion(line) {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    const x = newQA(line, recordCtx(c, r), 'custom');
+    const at = r.qa.findIndex(q => q.tag === 'close');
+    if (at >= 0) r.qa.splice(at, 0, x); else r.qa.push(x);
+    closeModal(); touchRecord(); render();
+    const t = root.querySelector('textarea[data-qa="' + x.id + '"][data-qf="a"]');
+    if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); }
+  }
+  async function finalizeRecord() {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    const issues = recordIssues(c, r);
+    const msg = (issues.length ? '以下内容尚未完善：\n· ' + issues.join('\n· ') + '\n\n' : '') + '定稿后笔录内容将锁定，不能再修改（需要时可解除定稿）。一般在被询问人、当事人核对并签字后定稿。确定定稿吗？';
+    if (!(await confirmDialog(msg, { title: '定稿', okText: '确定定稿' }))) return;
+    Object.assign(r, { status: 'final', finalAt: Date.now(), finalBy: state.user.id, finalByName: state.user.name });
+    if (!(await saveRecordNow())) { r.status = 'draft'; return; }
+    recSyncNeeded = true;
+    await flushRecord('定稿' + REC_TYPES[r.type], recordTitle(r));
+    render(); window.scrollTo(0, 0);
+    toast('已定稿', 'ok');
+  }
+  async function unfinalizeRecord() {
+    const r = state.recordData; if (!r) return;
+    if (!(await confirmDialog('解除定稿后可以修改笔录内容。\n如果纸质笔录已经签字，修改后须重新打印并由相关人员签字。确定解除吗？', { title: '解除定稿', danger: true, okText: '解除定稿' }))) return;
+    r.status = 'draft'; delete r.finalAt; delete r.finalBy; delete r.finalByName;
+    if (!(await saveRecordNow())) return;
+    recSyncNeeded = true;
+    await flushRecord('解除定稿' + REC_TYPES[r.type], recordTitle(r));
+    render();
+    toast('已解除定稿，可以修改', 'ok');
+  }
+  async function deleteRecord() {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    if (!(await confirmDialog('确定删除' + recordTitle(r) + '吗？删除后无法恢复。', { danger: true, okText: '删除', title: '删除笔录' }))) return;
+    clearTimeout(recTimer); recTimer = null;
+    await Store.del(recKey(r.id), true);
+    await mutateCase(c.id, cc => { cc.records = (cc.records || []).filter(x => x.id !== r.id); addLog(cc, '删除' + REC_TYPES[r.type], recordTitle(r)); });
+    Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
+    recSyncNeeded = false;
+    go('case', {}, true);
+    toast('已删除笔录', 'ok');
+  }
+  async function previewRecord() {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    await flushRecord();
+    showModal('<div class="row between nowrap"><h3 style="margin:0" class="grow">预览：' + esc(recordTitle(r)) + '</h3><button type="button" class="btn btn-sm" data-action="preview-zoom">放大字号</button></div>' +
+      '<p class="small muted">可给被询问人、当事人查看核对；正式文本以生成的 Word 打印件为准。</p>' + modelHtml(recordModel(c, r)) +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">关闭</button><button type="button" class="btn btn-primary" data-action="rec-docx">生成 Word</button></div>', 'viewer');
+    const m = modalRoot.querySelector('.modal'); if (m) m.classList.add('wide');
+  }
+  async function downloadRecordDocx() {
+    const c = state.caseData, r = state.recordData; if (!r) return;
+    if (typeof JSZip === 'undefined') { toast('打包组件（JSZip）未加载，无法生成 Word', 'error'); return; }
+    const issues = recordIssues(c, r);
+    if (issues.length) {
+      if (modal.kind) closeModal();
+      if (!(await confirmDialog('以下内容尚未完善：\n· ' + issues.join('\n· ') + '\n\n仍要生成 Word 吗？（空白处会留出横线，可打印后手写补充）', { title: '生成 Word', okText: '仍要生成' }))) return;
+    }
+    await flushRecord();
+    const bytes = await buildRecordDocx(c, r);
+    const name = recordFileName(c, r);
+    downloadBlob(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), name);
+    if (modal.kind) closeModal();
+    toast('已生成：' + name, 'ok', 3000);
   }
 
   /* ========================= 生成证据包 ========================= */
@@ -1969,7 +2824,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const num = safeName(c.number);
       const zip = new JSZip();
       const used = {};
-      const uniq = name => { let n = name, k = 2; while (used[n]) { n = name.replace(/\.jpg$/, '_' + (k++) + '.jpg'); } used[n] = true; return n; };
+      const uniq = name => { let n = name, k = 2; while (used[n]) { n = name.replace(/(\.[^.]+)$/, '_' + (k++) + '$1'); } used[n] = true; return n; };
       const files = [];
       const addPhoto = async (rec, fname, meta) => {
         const url = await loadPhoto(rec);
@@ -2001,10 +2856,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         sheet = { name: uniq(priceSheetName(c)), hash: await sha256Hex(x.bytes), data: x.data };
         zip.file(sheet.name, x.bytes, { binary: true, date: new Date(ts) });
       }
-      const logEntry = { at: ts, by: state.user.id, byName: state.user.name, action: '生成证据包', detail: '照片 ' + files.length + ' 张' + (sheet ? '，含核价表（涉案金额 ' + fmtMoney(sheet.data.totalAmount) + ' 元）' : '') };
-      const manifest = buildManifest(c, files, ts, logEntry, sheet);
+      // 笔录（Word）：现场笔录、询问笔录逐份生成
+      const recFiles = [];
+      for (const sum of (c.records || [])) {
+        const doc = normalizeRecord(await getJSON(recKey(sum.id), true, null));
+        if (!doc) throw new Error('笔录数据读取失败：' + REC_TYPES[sum.type] + (sum.name ? '（' + sum.name + '）' : '') + '。');
+        const bytes = await buildRecordDocx(c, doc);
+        const name = uniq(recordFileName(c, doc));
+        zip.file(name, bytes, { binary: true, date: new Date(doc.updatedAt || ts) });
+        recFiles.push({ name, hash: await sha256Hex(bytes), doc });
+      }
+      const logEntry = { at: ts, by: state.user.id, byName: state.user.name, action: '生成证据包', detail: '照片 ' + files.length + ' 张' + (sheet ? '，含核价表（涉案金额 ' + fmtMoney(sheet.data.totalAmount) + ' 元）' : '') + (recFiles.length ? '，笔录 ' + recFiles.length + ' 份' : '') };
+      const manifest = buildManifest(c, files, ts, logEntry, sheet, recFiles);
       zip.file('证据清单说明.txt', '\ufeff' + manifest.replace(/\n/g, '\r\n'), { date: new Date(ts) });
-      zip.file('SHA256SUMS.txt', files.map(f => f.hash + '  ' + f.name).concat(sheet ? [sheet.hash + '  ' + sheet.name] : []).join('\n') + '\n', { date: new Date(ts) });
+      zip.file('SHA256SUMS.txt', files.map(f => f.hash + '  ' + f.name).concat(sheet ? [sheet.hash + '  ' + sheet.name] : [], recFiles.map(f => f.hash + '  ' + f.name)).join('\n') + '\n', { date: new Date(ts) });
       const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE', mimeType: 'application/zip' });
       const filename = num + '_证据包_' + stamp(ts) + '.zip';
       const file = (typeof File === 'function') ? new File([blob], filename, { type: 'application/zip' }) : blob;
@@ -2012,7 +2877,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const optionalMissing = caseStats(c).optTotal - caseStats(c).optDone;
       await mutateCase(c.id, cc => { cc.lastPackagedAt = ts; cc.log.push(logEntry); }, ts);
       const amt = caseAmount(c.seizedItems);
-      state.packResult = { ok: true, filename, size: blob.size, photos: files.length, optionalMissing, sheet: sheet ? sheet.name : '', amount: amt.total, unpriced: amt.count - amt.priced };
+      state.packResult = { ok: true, filename, size: blob.size, photos: files.length, optionalMissing, sheet: sheet ? sheet.name : '', amount: amt.total, unpriced: amt.count - amt.priced,
+        records: recFiles.length, recDrafts: recFiles.filter(f => f.doc.status !== 'final').length };
       hideBusy();
       downloadBlob(blob, filename);
       render();
@@ -2023,7 +2889,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       return block({ title: '生成证据包失败', detail: e.message || String(e) });
     } finally { hideBusy(); }
   }
-  function buildManifest(c, files, ts, logEntry, sheet) {
+  function buildManifest(c, files, ts, logEntry, sheet, recFiles) {
+    recFiles = recFiles || [];
     const L = [];
     const line = (k, v) => L.push(k + '：' + (v == null || v === '' ? '—' : v));
     L.push('涉烟案件现场证据清单说明', '==============================');
@@ -2075,20 +2942,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       L.push('    SHA-256：' + sheet.hash);
     }
     L.push('');
+    L.push('三、笔录（' + recFiles.length + ' 份）');
+    if (!recFiles.length) L.push('本案未在系统中制作笔录。');
+    recFiles.forEach((f, i) => {
+      const r = f.doc;
+      L.push('[' + (i + 1) + '] ' + recordTitle(r) + (r.type === 'inquiry' && (r.seq || 1) > 1 ? ' 第' + r.seq + '次' : '') + '　' + (r.status === 'final' ? '已定稿（' + fmtTime(r.finalAt) + '，' + (r.finalByName || '') + '）' : '草稿（未定稿）'));
+      L.push('    时间：' + (cnRange(r.startAt, r.endAt) || '—') + '　' + (r.type === 'inquiry' ? '询问人' : '执法人员') + '：' + (officerNames(r) || '—') + '　记录人：' + (r.recorder || '—'));
+      if (r.type === 'inquiry') L.push('    已记录问答：' + r.qa.filter(x => String(x.a || '').trim()).length + ' 问');
+      L.push('    文件：' + f.name);
+      L.push('    SHA-256：' + f.hash);
+    });
+    L.push('');
     const ex = files.filter(f => f.group === 'extra');
-    L.push('三、补充照片（' + ex.length + ' 张）');
+    L.push('四、补充照片（' + ex.length + ' 张）');
     ex.forEach((f, i) => { L.push('[' + (i + 1) + '] ' + f.label); photoLines(f); });
     L.push('');
-    L.push('四、操作日志');
+    L.push('五、操作日志');
     c.log.concat([logEntry]).forEach(l => L.push(fmtTime(l.at) + '　' + l.byName + '　' + l.action + (l.detail ? '：' + l.detail : '')));
     L.push('');
-    L.push('五、核对说明');
+    L.push('六、核对说明');
     L.push('1. 每张照片的 SHA-256 摘要见上文及 SHA256SUMS.txt。收到证据包后，可在电脑上核对照片在证据包生成后是否被改动：');
     L.push('   Linux / macOS：在解压目录执行 sha256sum -c SHA256SUMS.txt（macOS 可用 shasum -a 256 -c SHA256SUMS.txt）；');
     L.push('   Windows：certutil -hashfile 文件名 SHA256，与上文摘要比对。');
     L.push('2. 摘要只能说明"证据包生成后文件是否被改动"，不能证明照片拍摄内容的真实性，也不是防篡改措施。');
     L.push('3. 拍摄时间取自采集手机的系统时间；位置取自浏览器定位（如有），精度见括号内数值。');
     L.push('4. 照片经系统压缩（长边不超过 ' + PHOTO_MAX + ' 像素）' + (state.settings.watermark ? '，并可能叠加了案件编号、时间、采集人等水印' : '') + '。');
+    L.push('5. 笔录 Word 文件是系统生成的电子文本，须打印后由被询问人（当事人、见证人）和执法人员签名（捺印），纸质签字件为正式笔录；"草稿"表示尚未定稿。');
     return L.join('\n') + '\n';
   }
   function downloadBlob(blob, filename) {
@@ -2111,11 +2990,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (!ok) return;
     showBusy('正在导出…');
     try {
-      const cases = []; const photos = {};
+      const cases = []; const photos = {}; const records = {};
       for (const id of await allCaseIds()) {
         const c = await getJSON(caseKey(id), true, null); if (!c) continue;
         const recs = Object.values(c.evidence || {}).concat(c.seizedItems || [], c.extras || []);
         for (const r of recs) if (r && r.photoId && !photos[r.photoId]) { const p = await getJSON(photoKey(r.photoId), true, null); if (p) photos[r.photoId] = p; }
+        for (const x of (c.records || [])) { const d = await getJSON(recKey(x.id), true, null); if (d) records[x.id] = d; }
         cases.push(c);
       }
       const ts = Date.now();
@@ -2123,13 +3003,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         format: 'tobacco-evidence-backup', formatVersion: 1, appVersion: APP_VERSION, exportedAt: ts, exportedBy: state.user.name,
         templates: await getJSON(K.templates, true, state.templates), users: await getJSON(K.users, true, state.users),
         settings: Object.assign({}, state.settings, { lastExportAt: ts }), barcodeDict: await getJSON(K.barcodes, true, {}), priceCatalog: await getJSON(K.priceCatalog, true, null),
-        index: await getJSON(K.index, true, []), cases, photos
+        index: await getJSON(K.index, true, []), cases, photos, records
       };
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
       downloadBlob(blob, '证据采集系统备份_' + stamp(ts) + '.json');
       state.settings.lastExportAt = ts;
       await setJSON(K.settings, state.settings, true);
-      toast('已导出：' + cases.length + ' 个案件，' + Object.keys(photos).length + ' 张照片（' + fmtSize(blob.size) + '）', 'ok', 5000);
+      toast('已导出：' + cases.length + ' 个案件，' + Object.keys(photos).length + ' 张照片，' + Object.keys(records).length + ' 份笔录（' + fmtSize(blob.size) + '）', 'ok', 5000);
     } finally { hideBusy(); }
   }
   async function importData(file) {
@@ -2137,7 +3017,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     try { data = JSON.parse(await file.text()); } catch (e) { toast('无法读取该文件，请确认是本系统导出的备份文件', 'error'); return; }
     if (!data || data.format !== 'tobacco-evidence-backup' || !Array.isArray(data.users) || !Array.isArray(data.cases)) { toast('文件格式不正确，不是本系统的备份文件', 'error'); return; }
     if (!data.users.some(u => u.role === 'admin')) { toast('备份中没有管理员账号，无法还原', 'error'); return; }
-    const ok = await confirmDialog('将从备份还原（导出时间 ' + fmtTime(data.exportedAt) + '）：\n' + data.cases.length + ' 个案件、' + Object.keys(data.photos || {}).length + ' 张照片、' + data.users.length + ' 个用户。\n\n当前系统中的全部数据将被覆盖，且无法撤销。', { title: '从备份还原', danger: true, okText: '覆盖并还原' });
+    const ok = await confirmDialog('将从备份还原（导出时间 ' + fmtTime(data.exportedAt) + '）：\n' + data.cases.length + ' 个案件、' + Object.keys(data.photos || {}).length + ' 张照片、' + Object.keys(data.records || {}).length + ' 份笔录、' + data.users.length + ' 个用户。\n\n当前系统中的全部数据将被覆盖，且无法撤销。', { title: '从备份还原', danger: true, okText: '覆盖并还原' });
     if (!ok) return;
     showBusy('正在还原…');
     let fail = 0;
@@ -2148,11 +3028,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (c) {
           const recs = Object.values(c.evidence || {}).concat(c.seizedItems || [], c.extras || []);
           for (const r of recs) if (r && r.photoId) await Store.del(photoKey(r.photoId), true);
+          for (const x of (c.records || [])) await Store.del(recKey(x.id), true);
         }
         await Store.del(caseKey(id), true);
       }
       const photos = data.photos || {};
       for (const pid of Object.keys(photos)) if (!(await Store.set(photoKey(pid), JSON.stringify(photos[pid]), true))) fail++;
+      const records = data.records || {};
+      for (const rid of Object.keys(records)) if (!(await Store.set(recKey(rid), JSON.stringify(records[rid]), true))) fail++;
       const idx = [];
       for (const c0 of data.cases) {
         const c = normalizeCase(c0);
@@ -2306,7 +3189,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (!PIN_RE.test(pin)) { toast('PIN 须为 4–6 位数字', 'error'); return; }
         const users = await getJSON(K.users, true, state.users);
         if (users.some(u => u.name === n)) { toast('已有同名用户', 'error'); return; }
-        users.push({ id: uid(), name: n, role: role === 'admin' ? 'admin' : 'inspector', pinHash: await makePinHash(pin), createdAt: Date.now() });
+        users.push({ id: uid(), name: n, role: role === 'admin' ? 'admin' : 'inspector', pinHash: await makePinHash(pin), certNo: f.certNo ? f.certNo.value.trim() : '', createdAt: Date.now() });
         if (await saveUsers(users)) { toast('已添加：' + n, 'ok'); render(); }
         return;
       }
@@ -2349,6 +3232,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (await setJSON(K.settings, next, true)) { state.settings = Object.assign({ watermark: true }, next); toast('已保存标准价', 'ok'); render(); }
         return;
       }
+      case 'qaCustom': {
+        const q = f.q.value.trim();
+        if (!q) { toast('请输入问题', 'warn'); return; }
+        addQuestion(q);
+        return;
+      }
+      case 'recordTpl': {
+        const lines = v => String(v || '').split('\n').map(x => x.trim()).filter(Boolean);
+        const notice = f.notice.value.trim();
+        if (!notice) { toast('告知语不能为空', 'error'); return; }
+        const cur = await getJSON(K.settings, true, {}) || {};
+        const next = Object.assign({}, cur, { inquiryNotice: notice, inquiryOpen: lines(f.open.value), inquiryClose: lines(f.close.value) });
+        const list = (await getJSON(K.templates, true, state.templates)).map(t => { const el = f.elements['q_' + t.id]; return el ? Object.assign({}, t, { questions: lines(el.value) }) : t; });
+        if (await setJSON(K.settings, next, true) && await setJSON(K.templates, list, true)) {
+          state.settings = Object.assign({ watermark: true }, next); state.templates = list;
+          toast('已保存笔录模板（只影响之后新建的笔录）', 'ok');
+        }
+        return;
+      }
+      case 'myCert': {
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === state.user.id); if (!u) return;
+        u.certNo = f.certNo.value.trim();
+        if (await saveUsers(users)) { state.user = u; toast('已保存执法证号', 'ok'); }
+        return;
+      }
       case 'priceSettings': {
         const cur = await getJSON(K.settings, true, {}) || {};
         const next = Object.assign({}, cur, { priceOrg: f.org.value.trim(), priceBasis: f.basis.value.trim() });
@@ -2370,6 +3279,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       case 'back': {
         const to = el.dataset.to || 'cases';
         if (state.view === 'templateEdit') state.editTemplate = null;
+        if (state.view === 'record') await leaveRecord();
         go(to, {}, false);
         if (to === 'cases') refreshList(true);
         return;
@@ -2467,6 +3377,46 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         return;
       }
       case 'package': await generatePackage(); return;
+      case 'jump': { const t = document.getElementById(el.dataset.to); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      // 笔录
+      case 'rec-new': await newRecord(el.dataset.type); return;
+      case 'rec-open': await openRecord(el.dataset.id); return;
+      case 'rec-final': await finalizeRecord(); return;
+      case 'rec-unfinal': await unfinalizeRecord(); return;
+      case 'rec-del': await deleteRecord(); return;
+      case 'rec-preview': await previewRecord(); return;
+      case 'rec-docx': await downloadRecordDocx(); return;
+      case 'rec-geo': await appendGeoToPlace(); return;
+      case 'preview-zoom': {
+        const pg = modalRoot.querySelector('.doc-page');
+        if (pg) { pg.classList.toggle('big'); el.textContent = pg.classList.contains('big') ? '正常字号' : '放大字号'; }
+        return;
+      }
+      case 'rf-chip': case 'rec-set-text': case 'rec-officer': case 'rec-officer-add': case 'rec-officer-del': case 'rec-now':
+      case 'qa-hint': case 'qa-edit': case 'qa-up': case 'qa-del': case 'qa-add': case 'qa-add-pick': case 'scene-draft': {
+        const r = state.recordData;
+        if (!r || r.status === 'final') return;
+        await recordAction(action, el, r);
+        return;
+      }
+      case 'rectpl-reset': {
+        if (!(await confirmDialog('确定把告知语、通用问题和各类案件的询问提纲恢复为系统默认吗？已制作的笔录不受影响。', { okText: '恢复默认', danger: true }))) return;
+        const cur = await getJSON(K.settings, true, {}) || {};
+        ['inquiryNotice', 'inquiryOpen', 'inquiryClose'].forEach(k => delete cur[k]);
+        const list = (await getJSON(K.templates, true, state.templates)).map(t => { const x = Object.assign({}, t); delete x.questions; return x; });
+        if (await setJSON(K.settings, cur, true) && await setJSON(K.templates, list, true)) { state.settings = Object.assign({ watermark: true }, cur); state.templates = list; toast('已恢复默认', 'ok'); render(); }
+        return;
+      }
+      case 'user-cert': {
+        const u0 = state.users.find(x => x.id === el.dataset.id); if (!u0) return;
+        const v = await promptDialog('设置执法证号', u0.name + ' 的执法证号', u0.certNo || '');
+        if (v === false || v == null) return;
+        const users = await getJSON(K.users, true, state.users);
+        const u = users.find(x => x.id === u0.id); if (!u) return;
+        u.certNo = String(v).trim();
+        if (await saveUsers(users)) { if (u.id === state.user.id) state.user = u; toast('已保存', 'ok'); render(); }
+        return;
+      }
       case 'download-again': if (state.lastPackage) downloadBlob(state.lastPackage.blob, state.lastPackage.filename); return;
       case 'share-package': {
         const p = state.lastPackage; if (!p) return;
@@ -2571,6 +3521,75 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
   }
 
+  async function recordAction(action, el, r) {
+    const c = state.caseData;
+    switch (action) {
+      case 'rf-chip': {
+        const path = el.dataset.rf, v = el.dataset.v, cur = getPath(r, path);
+        if (el.dataset.multi) { const arr = Array.isArray(cur) ? cur.slice() : []; const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); setPath(r, path, arr); }
+        else if (cur === v) { if (el.dataset.keep) return; setPath(r, path, ''); }
+        else setPath(r, path, v);
+        touchRecord(); renderKeepScroll(); return;
+      }
+      case 'rec-set-text': {
+        setPath(r, el.dataset.rf, el.dataset.v);
+        const t = root.querySelector('textarea[data-rf="' + el.dataset.rf + '"]'); if (t) { t.value = el.dataset.v; autoGrow(t); }
+        touchRecord(); return;
+      }
+      case 'rec-officer': {
+        const i = r.officers.findIndex(o => o.id === el.dataset.id);
+        if (i >= 0) r.officers.splice(i, 1);
+        else { const u = state.users.find(x => x.id === el.dataset.id); if (u) r.officers.push({ id: u.id, name: u.name, certNo: u.certNo || '' }); }
+        refreshQuestionTexts(); touchRecord(); renderKeepScroll(); return;
+      }
+      case 'rec-officer-add': {
+        r.officers.push({ id: 'x' + uid(), name: '', certNo: '', manual: true });
+        touchRecord(); renderKeepScroll();
+        const inp = root.querySelector('[data-rf="officers.' + (r.officers.length - 1) + '.name"]'); if (inp) inp.focus();
+        return;
+      }
+      case 'rec-officer-del': r.officers.splice(+el.dataset.i, 1); refreshQuestionTexts(); touchRecord(); renderKeepScroll(); return;
+      case 'rec-now': setPath(r, el.dataset.rf, Date.now()); touchRecord(); renderKeepScroll(); return;
+      case 'qa-hint': {
+        const x = r.qa.find(q => q.id === el.dataset.qa); if (!x) return;
+        let text = el.dataset.v;
+        if (text === '@物品清单') { text = itemsSummaryText(c); if (!text) { toast('本案尚未登记涉案物品', 'warn'); return; } }
+        else if (text === '@本人信息') { text = selfIntro(r.subject, r.startAt); if (!text) { toast('请先在"被询问人"中填写姓名等信息', 'warn'); return; } }
+        const cur = String(x.a || '').trim();
+        x.a = cur ? cur + (/[，。；！？,.;!?]$/.test(cur) ? '' : '，') + text : text;
+        const t = root.querySelector('textarea[data-qa="' + x.id + '"][data-qf="a"]');
+        if (t) { t.value = x.a; autoGrow(t); const card = t.closest('.qa-card'); if (card) card.classList.add('answered'); }
+        updateQaCount(); touchRecord(); return;
+      }
+      case 'qa-edit': {
+        state.qaEditing = state.qaEditing === el.dataset.qa ? null : el.dataset.qa;
+        renderKeepScroll();
+        if (state.qaEditing) { const t = root.querySelector('textarea[data-qa="' + state.qaEditing + '"][data-qf="q"]'); if (t) t.focus(); }
+        return;
+      }
+      case 'qa-up': {
+        const i = r.qa.findIndex(q => q.id === el.dataset.qa);
+        if (i > 0) { [r.qa[i - 1], r.qa[i]] = [r.qa[i], r.qa[i - 1]]; touchRecord(); renderKeepScroll(); }
+        return;
+      }
+      case 'qa-del': {
+        const i = r.qa.findIndex(q => q.id === el.dataset.qa); if (i < 0) return;
+        const x = r.qa[i];
+        if (String(x.a || '').trim() && !(await confirmDialog('这个问题已有回答，确定删除吗？\n' + x.q.slice(0, 40), { danger: true, okText: '删除' }))) return;
+        r.qa.splice(i, 1); touchRecord(); renderKeepScroll(); return;
+      }
+      case 'qa-add': showQaAddModal(); return;
+      case 'qa-add-pick': addQuestion(el.dataset.line); return;
+      case 'scene-draft': {
+        if (r.body.trim() && !(await confirmDialog('将用自动生成的草稿替换当前"现场情况"的内容（包括你做的修改），确定吗？', { okText: '替换' }))) return;
+        r.body = draftSceneBody(c, r);
+        touchRecord(); renderKeepScroll();
+        toast('已生成草稿，请核对后修改', 'ok', 2000);
+        return;
+      }
+    }
+  }
+
   /* ========================= 事件绑定（委托） ========================= */
   let running = 0;
   async function run(fn) {
@@ -2592,6 +3611,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function onInput(ev) {
     const el = ev.target;
+    if (state.view === 'record' && (el.dataset.rf || el.dataset.qa) && el.closest('#view-root')) { onRecordInput(el); return; }
     if (el.hasAttribute('data-price-q')) { renderPriceResults(el.value); return; }
     if (el.name === 'leafPrice' && el.closest('form[data-form="stdPrices"]')) { const sp = $('#shred-price'); if (sp) sp.textContent = Number(el.value) > 0 ? money(Number(el.value) * 1.5) : '—'; return; }
     if (el.dataset.filter) {
@@ -2659,6 +3679,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   setInterval(() => {
     if (state.user && state.view === 'cases' && !modal.kind && !document.hidden) run(() => refreshList(true));
   }, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && state.view === 'record') run(() => flushRecord()); });
+  window.addEventListener('pagehide', () => { if (recTimer) saveRecordNow(); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state.user && state.view === 'cases' && !modal.kind) run(() => refreshList(true));
   });
@@ -2702,10 +3724,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // 供自动化测试读取的只读接口
   window.__EVIDENCE_APP__ = {
     version: APP_VERSION,
-    analyzeImageData, checkGtin, seizedItemValid, safeName,
+    analyzeImageData, checkGtin, seizedItemValid, safeName, parseIdNo, recordModel, modelDocx, modelHtml, itemsSummaryText,
     get backend() { return Store.backend; },
     get idle() { return running === 0; },
-    get state() { return { view: state.view, user: state.user && { id: state.user.id, name: state.user.name, role: state.user.role }, caseId: state.caseId }; }
+    get state() { return { view: state.view, user: state.user && { id: state.user.id, name: state.user.name, role: state.user.role }, caseId: state.caseId, recordId: state.recordId }; }
   };
 
   render();

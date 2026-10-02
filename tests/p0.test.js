@@ -164,7 +164,7 @@ module.exports = [
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
         const m = u.manifest;
-        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.2.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
+        ['采集人（案件创建人）：管理员甲', '承办人：稽查员A', '拍摄时间：', '证据包生成时间：', '系统：涉烟案件现场证据采集系统 v2.3.0', '不是防篡改措施'].forEach(s => assert(m.includes(s), '清单缺少：' + s));
         const jpgs = u.files.filter(f => f.endsWith('.jpg'));
         let checked = 0;
         for (const f of jpgs.slice(0, 5)) {
