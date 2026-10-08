@@ -2,13 +2,15 @@
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
+const S = require('./synth');
 
 (async () => {
   await L.makeImages();
   const out = path.join(L.ROOT, 'screenshots');
   fs.mkdirSync(out, { recursive: true });
   const w = L.createWorld();
-  const ctxOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 };
+  // 模拟摄像头画面（条烟侧面的条码），用于实时扫码截图
+  const ctxOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, initScript: S.fakeCameraScript('6901028075015') };
   const p = await L.openPage(w, ctxOpts);
   const page = p.page;
   const shot = async (name, full) => { await page.waitForTimeout(250); await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove())); await page.screenshot({ path: path.join(out, name + '.png'), fullPage: !!full }); console.log('截图', name); };
@@ -38,12 +40,34 @@ const L = require('./lib');
 
   await L.captureAllRequired(page);
   await L.addSeized(page, { barcode: '118187', qty: 29 });
+  // 实时扫码 → 图片计数（20 条中华 + 4 条其他品牌的合成照片）
+  const pile = await S.pilePhoto('shot-pile', { rows: 6, cols: 4, other: [1, 5, 7, 12], y0: 40 });
   await page.click('[data-action=seized-add]');
-  await page.fill('form[data-form=seized] [name=barcode]', '075015');
-  await page.fill('form[data-form=seized] [name=qty]', '20');
+  await page.evaluate(() => { window.__zxDecode = window.ZXingLite.decode; window.ZXingLite.decode = () => null; }); // 先暂停识别以便截图
+  await page.click('[data-action=scan-barcode]');
+  await page.waitForFunction(() => document.querySelector('.scanner video') && document.querySelector('.scanner video').readyState >= 2);
+  await shot('22-实时扫码');
+  await page.evaluate(() => { window.ZXingLite.decode = window.__zxDecode; });
+  await page.waitForSelector('.scanner', { state: 'detached', timeout: 15000 });
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-action=count-photo][data-src=camera]')]);
+  await fc.setFiles(pile.file);
+  await page.waitForSelector('.counter canvas.boxing');
+  const r = await page.$eval('.counter canvas', c => { const x = c.getBoundingClientRect(); return { left: x.left, top: x.top, width: x.width, height: x.height }; });
+  const b0 = pile.boxes[0]; const pt = q => [r.left + q.x / pile.W * r.width, r.top + q.y / pile.H * r.height];
+  await page.mouse.move(...pt({ x: b0.x + 3, y: b0.y + 3 })); await page.mouse.down();
+  await page.mouse.move(...pt({ x: b0.x + b0.w - 3, y: b0.y + b0.h - 3 }), { steps: 6 }); await page.mouse.up();
+  await page.waitForSelector('.cnt-n', { timeout: 20000 });
+  await shot('23-图片计数（核对）');
+  await page.click('.counter [data-ct=done]');
+  await page.waitForFunction(() => document.querySelector('form[data-form=seized] [name=qty]') && document.querySelector('form[data-form=seized] [name=qty]').value === '20');
   await page.evaluate(() => document.activeElement.blur());
   await shot('05-涉案物品录入（卷烟）');
+  // 扫码录入的条目"保存并继续"会自动打开摄像头扫下一个品规；这里关掉，改录烟叶
+  await page.evaluate(() => { window.ZXingLite.decode = () => null; });
   await page.click('[data-action=seized-save-next]');
+  await page.waitForSelector('.scanner video');
+  await page.click('.scanner [data-sc=close]');
+  await page.evaluate(() => { window.ZXingLite.decode = window.__zxDecode; });
   await page.waitForFunction(() => window.__EVIDENCE_APP__.idle && document.querySelector('form[data-form=seized] [name=barcode]') && document.querySelector('form[data-form=seized] [name=barcode]').value === '');
   await page.click('.kind-tabs .btn:has-text("烟叶")');
   await page.fill('form[data-form=seized] [name=qty]', '30');

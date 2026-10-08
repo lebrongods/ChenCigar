@@ -14,6 +14,7 @@
   --ok: #1e7a45; --ok-l: #e5f5eb; --radius: 10px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   -webkit-text-size-adjust: 100%; }
@@ -202,6 +203,41 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
 .doc-blank { height: .8em; }
 .doc-footer { margin-top: 16px; padding-top: 8px; border-top: 1px dashed #bbb; font-size: .8em; color: #555; }
 .seized-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 14px; }
+/* 扫码与图片计数（全屏层，在弹窗之上） */
+body.overlay-open { overflow: hidden; }
+body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和照片上的点按 */
+.overlay { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; }
+.scanner { background: #000; color: #fff; }
+.scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.scanner.failed video, .scanner.failed .scan-aim { display: none; }
+.scan-top { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; background: linear-gradient(rgba(0,0,0,.65), rgba(0,0,0,0)); }
+.scan-title { flex: 1; min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-engine { font-size: 12px; opacity: .8; white-space: nowrap; }
+.scan-aim { position: absolute; left: 50%; top: 40%; width: min(82vw, 440px); height: min(36vw, 190px); transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.95); border-radius: 10px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.38); overflow: hidden; }
+.scan-line { position: absolute; left: 6%; right: 6%; top: 50%; height: 2px; background: #ff453a; box-shadow: 0 0 6px #ff453a; animation: scanline 1.6s ease-in-out infinite alternate; }
+@keyframes scanline { from { top: 12%; } to { top: 88%; } }
+.scan-status { position: absolute; left: 16px; right: 16px; top: calc(40% + min(18vw, 95px) + 14px); text-align: center; font-size: 15px; line-height: 1.5; text-shadow: 0 1px 3px #000; }
+.scan-status.bad { top: 22%; padding: 14px; border-radius: 10px; background: rgba(255,255,255,.12); text-shadow: none; }
+.scan-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 16px 12px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.65)); }
+.scan-bottom .btn, .scan-top .btn { background: rgba(255,255,255,.94); border-color: transparent; }
+.scan-bottom .btn.active { background: #ffd54f; }
+.counter { background: #151a18; color: #fff; }
+.cnt-top { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
+.cnt-top strong { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cnt-tip { padding: 8px 12px; font-size: 14px; line-height: 1.5; background: #26312d; }
+.cnt-stage { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; background: #000; }
+.cnt-stage canvas { display: block; touch-action: pan-x pan-y; }
+.cnt-stage canvas.boxing { touch-action: none; cursor: crosshair; }
+.counter, .scanner { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.cnt-panel { background: #fff; color: var(--text); padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
+.cnt-panel .btn-row { margin-top: 8px; }
+.cnt-count { font-size: 15px; overflow-wrap: anywhere; }
+.cnt-n { font-size: 28px; font-weight: 700; color: var(--pri); }
+.cnt-thr { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.cnt-thr input { flex: 1; min-width: 0; }
+.btn-scan { min-height: 52px; font-size: 17px; margin: 4px 0 12px; }
+.count-box { margin: -4px 0 12px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; background: #f8faf9; }
+.count-box .row { margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -216,12 +252,14 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
 <input type="file" id="catalog-input" accept=".csv,text/csv" hidden>
 <!-- JSZip 3.10.1（MIT 许可），内联以支持无网络环境打包 -->
 <script>/*__JSZIP_INLINE__*/</script>
+<!-- ZXing 0.23.0 的 EAN/UPC 条码识别部分（Apache License 2.0），浏览器不支持 BarcodeDetector 时使用 -->
+<script>/*__ZXING_INLINE__*/</script>
 <script>
 (function () {
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.3.0';
+  const APP_VERSION = '2.4.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -233,7 +271,6 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
   const GEO_TIMEOUT = 6000;
   // 拍照质量阈值（在长边 480px 的灰度图上计算）；只提示、不拦截
   const QUALITY = { darkMean: 60, darkClip: 0.6, brightMean: 205, brightClip: 0.4, blurVar: 60 };
-  const BARCODE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf'];
   const UNITS = ['条', '包', '支', '件'];
   const PIN_RE = /^\d{4,6}$/;
   const K = { templates: 'templates', index: 'case-index', users: 'users', settings: 'settings', barcodes: 'barcode-dict', priceCatalog: 'price-catalog', session: 'current-session', prefs: 'prefs' };
@@ -570,6 +607,8 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     window.scrollTo(0, 0);
   }
   window.addEventListener('popstate', e => {
+    // 返回键先关闭扫码、图片计数界面（摄像头随之关闭）
+    if (overlayOpen()) { closeScanner(); closeCounter(); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
     if (modal.kind) { closeModal(false); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
     if (!state.user) return;
     const s = e.state || { view: 'cases' };
@@ -810,26 +849,80 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
   }
 
   /* ========================= 条码 ========================= */
-  function barcodeSupported() { return 'BarcodeDetector' in window; }
-  async function tryDetectBarcode(file) {
-    if (!barcodeSupported()) return { error: 'unsupported' };
-    try {
-      let formats = BARCODE_FORMATS;
+  // 识别引擎：浏览器自带 BarcodeDetector（多数安卓 Chrome）优先；没有时用内置 ZXing 识别库（iPhone、微信内置浏览器等）。
+  // 只识别商品条码（EAN-13/EAN-8/UPC），避免误读条烟上的 32 位码等其他条码。
+  const SCAN_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+  let nativeDetectorP = null;
+  function getNativeDetector() {
+    if (!nativeDetectorP) nativeDetectorP = (async () => {
+      if (!('BarcodeDetector' in window)) return null;
       try {
+        let formats = SCAN_FORMATS;
         if (BarcodeDetector.getSupportedFormats) {
           const sup = await BarcodeDetector.getSupportedFormats();
-          const f = BARCODE_FORMATS.filter(x => sup.includes(x));
-          if (!f.length) return { error: 'unsupported' };
-          formats = f;
+          formats = SCAN_FORMATS.filter(f => sup.includes(f));
+          if (!formats.length) return null;
         }
-      } catch (e) { /* 忽略，按默认格式尝试 */ }
-      const det = new BarcodeDetector({ formats });
-      const src = await loadImageFromFile(file);
-      const res = await det.detect(src);
-      if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
-      if (res && res.length && res[0].rawValue) return { value: String(res[0].rawValue).trim(), format: res[0].format };
+        return new BarcodeDetector({ formats });
+      } catch (e) { return null; }
+    })();
+    return nativeDetectorP;
+  }
+  function zxingReady() { return !!(window.ZXingLite && typeof window.ZXingLite.decode === 'function'); }
+  function barcodeSupported() { return 'BarcodeDetector' in window || zxingReady(); }
+  // 网页直接打开摄像头需要浏览器支持且处于安全环境（https、localhost 或本机文件）
+  function liveCameraSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && window.isSecureContext !== false; }
+  // UPC-A（12 位）补前导 0 即为对应的 EAN-13，与价格目录一致
+  function normalizeScanned(v) { v = String(v || '').trim(); return /^\d{12}$/.test(v) ? '0' + v : v; }
+  function grayBytes(cv) {
+    const d = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data;
+    const g = new Uint8ClampedArray(cv.width * cv.height);
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
+    return g;
+  }
+  // 识别画布中的商品条码；both=true 时自带识别失败再用内置识别库（拍照识别用，实时扫码只用一种以免卡顿）
+  async function decodeCanvas(cv, tryHarder, both) {
+    const det = await getNativeDetector();
+    if (det) {
+      try {
+        const res = await det.detect(cv);
+        const hit = (res || []).map(r => String(r.rawValue || '').trim()).find(v => /^\d{8,13}$/.test(v) && checkGtin(v) !== false);
+        if (hit) return { value: normalizeScanned(hit), engine: 'native' };
+      } catch (e) { /* 自带识别出错时退回内置识别库 */ }
+      if (!both) return null;
+    }
+    if (zxingReady()) {
+      const r = window.ZXingLite.decode(grayBytes(cv), cv.width, cv.height, !!tryHarder);
+      if (r && r.text) return { value: normalizeScanned(r.text), engine: 'zxing' };
+    }
+    return null;
+  }
+  // 截取图像中间 frac 比例的区域，缩到长边 max 以内，可旋转 90°（识别竖放的条码）
+  function cropToCanvas(src, W, H, frac, max, rot, cv) {
+    const cw = W * frac, ch = H * frac, sx = (W - cw) / 2, sy = (H - ch) / 2;
+    const k = Math.min(1, max / Math.max(cw, ch));
+    const ow = Math.max(1, Math.round(cw * k)), oh = Math.max(1, Math.round(ch * k));
+    cv = cv || document.createElement('canvas');
+    cv.width = rot ? oh : ow; cv.height = rot ? ow : oh;
+    const x = cv.getContext('2d', { willReadFrequently: true });
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    if (rot) { x.translate(cv.width, 0); x.rotate(Math.PI / 2); }
+    x.drawImage(src, sx, sy, cw, ch, 0, 0, ow, oh);
+    return cv;
+  }
+  // 从照片识别条码：依次尝试不同缩放、居中裁切和旋转 90°
+  async function tryDetectBarcode(file) {
+    if (!barcodeSupported()) return { error: 'unsupported' };
+    let src;
+    try { src = await loadImageFromFile(file); } catch (e) { return { error: 'failed', message: e.message }; }
+    try {
+      const { w, h } = dims(src);
+      for (const [frac, max, rot] of [[1, 1600, 0], [1, 1000, 0], [0.6, 1200, 0], [1, 1600, 90], [0.6, 1200, 90]]) {
+        const r = await decodeCanvas(cropToCanvas(src, w, h, frac, max, rot), true, true);
+        if (r) return r;
+      }
       return { error: 'notfound' };
-    } catch (e) { return { error: 'failed', message: e.message }; }
+    } catch (e) { return { error: 'failed', message: e.message }; } finally { if (src.close) try { src.close(); } catch (e) { /* 忽略 */ } }
   }
   // GTIN（EAN-8/UPC-A/EAN-13/ITF-14）校验位；非此类条码返回 null
   function checkGtin(code) {
@@ -1768,7 +1861,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
   function seizedSectionHtml(c) {
     const req = c.template.requiresSeizedItems;
     let html = '<div class="section-title" id="sec-items"><h2>涉案物品录入' + (req ? ' <span class="badge req">必填</span>' : '') + '</h2>' +
-      '<button type="button" class="btn btn-sm btn-primary" data-action="seized-add">＋ 登记</button></div><div class="card" id="seized-list">';
+      '<div class="row"><button type="button" class="btn btn-sm btn-primary" data-action="seized-scan">扫码录入</button><button type="button" class="btn btn-sm" data-action="seized-add">＋ 登记</button></div></div><div class="card" id="seized-list">';
     if (!c.seizedItems.length) {
       html += '<div class="muted small">' + (req ? '本类案件须登记涉案物品（卷烟、烟叶、烟丝、空管烟、电子烟等）的名称和数量，未登记无法生成证据包。' : '如有涉案物品请登记。') + '</div>';
     } else {
@@ -1784,6 +1877,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
           '<div class="small">' + priceText + '</div>' +
           (p.pq == null && Number(s.qty) > 0 && p.hasPrice ? '<div class="warn-text small">' + esc(p.notes[0] || '') + '</div>' : '') +
           ((s.kind || 'cigarette') === 'cigarette' ? '<div class="muted small break">条码：' + (s.barcode ? esc(s.barcode) : '—') + '</div>' : '') +
+          (s.countNote ? '<div class="muted small">' + esc(countNoteDisplay(s)) + '</div>' : '') +
           (valid ? '' : '<div class="danger-text small">信息不完整，打包前需补全</div>') + '</div>' +
           '<button type="button" class="btn btn-sm" data-action="seized-edit" data-id="' + esc(s.id) + '">编辑</button></div>';
       }).join('');
@@ -2161,12 +2255,14 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       '<label class="field"><span>再次输入新 PIN</span><input type="password" name="pin2" inputmode="numeric" maxlength="6" autocomplete="new-password"></label>' +
       '<button type="submit" class="btn btn-primary btn-block">保存新 PIN</button></form>' +
       '<div class="card" id="about"><h3>关于本系统</h3><div class="kv"><div>版本</div><div>v' + APP_VERSION + '</div><div>存储方式</div><div>' + backendText + '</div>' +
-      '<div>条码识别</div><div>' + (barcodeSupported() ? '当前浏览器支持自动识别' : '当前浏览器不支持自动识别，请手工输入') + '</div><div>存储占用</div><div id="quota">—</div></div>' +
+      '<div>条码识别</div><div>' + ('BarcodeDetector' in window ? '浏览器自带识别' : zxingReady() ? '内置识别库' : '不可用，请手工输入') + '</div>' +
+      '<div>摄像头扫码</div><div>' + (liveCameraSupported() ? '可实时扫码' : '当前打开方式不能直接用摄像头，扫码时改用拍照识别') + '</div><div>第三方组件</div><div>JSZip 3.10.1（MIT）；ZXing 0.23.0 条码识别部分（Apache License 2.0）</div><div>存储占用</div><div id="quota">—</div></div>' +
       '<h3 style="margin-top:12px">使用限制（请知悉）</h3><ol class="small" style="padding-left:20px;margin:0">' +
       '<li>角色权限为<strong>界面层控制</strong>：数据保存在共享存储中，不是服务器级访问控制，不能防止有技术能力的人直接读取数据。</li>' +
       '<li><strong>无实时同步</strong>：他人新建或修改的数据需刷新后可见（案件列表每 30 秒自动刷新，也可手动刷新）；两人同时修改同一案件时，后保存的可能覆盖先保存的。</li>' +
       '<li>"必拍项缺失拦截"只保证<strong>不会漏拍</strong>，不能证明<strong>拍得对、拍得清</strong>，照片内容仍需人工审核。拍照质量提示（偏暗/过曝/模糊）只是参考，可能误报或漏报。</li>' +
-      '<li>条码识别依赖浏览器的 BarcodeDetector 功能（部分安卓 Chrome 支持，iPhone 一般不支持），不支持时请手工输入条码。</li>' +
+      '<li>扫码优先用浏览器自带的条码识别，没有时用系统内置的识别库，只识别商品条码（EAN/UPC）。实时扫码需要通过 https 网址或在本机打开；不满足时自动改用拍照识别。条码破损、反光、对不上焦时可能识别不出，请手工输入后 6 位。</li>' +
+      '<li>图片计数是按外观找与框选那一条相同的物品，被遮挡、叠压、反光严重的数不出来，外观相近的可能误数；必须逐个核对，数量以现场清点为准。</li>' +
       '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
       '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li>' +
       '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），烟叶、烟丝、空管烟、电子烟按管理员维护的标准价计价；核价表须由经办人核对后签字盖章；卷烟包、支按每条 10 包、每包 20 支折算。</li>' +
@@ -2225,7 +2321,21 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     return '<div class="row nowrap" style="align-items:flex-end"><label class="field grow"><span>数量 *</span><div class="stepper"><button type="button" class="btn" data-action="qty-step" data-d="-1" aria-label="减少">−</button>' +
       '<input type="number" name="qty" inputmode="decimal" enterkeyhint="done" min="0" step="any" value="' + esc(s.qty) + '"><button type="button" class="btn" data-action="qty-step" data-d="1" aria-label="增加">＋</button></div></label>' +
       unitHtml + '</div>' +
-      '<div class="chips" style="margin:-4px 0 12px">' + chips.map(v => '<button type="button" class="btn btn-sm" data-action="qty-set" data-v="' + v + '">' + v + '</button>').join('') + '</div>';
+      '<div class="chips" style="margin:-4px 0 12px">' + chips.map(v => '<button type="button" class="btn btn-sm" data-action="qty-set" data-v="' + v + '">' + v + '</button>').join('') + '</div>' +
+      (COUNT_KINDS.includes(s.kind || 'cigarette') ? '<div class="count-box"><div class="row"><button type="button" class="btn btn-sm" data-action="count-photo" data-src="camera">拍照计数</button>' +
+        '<button type="button" class="btn btn-sm" data-action="count-photo" data-src="album">用相册照片计数</button></div>' +
+        '<div class="small muted">' + (s.countParts && s.countParts.length ? '本次' + esc(countNoteText(s.countParts, s.unit)) : '拍一张码放好的照片，框住其中一' + esc(s.unit || '条') + '，自动数出相同的，核对后填入数量') + '</div></div>' : '');
+  }
+  function countNoteDisplay(it) {
+    return it.countNote + (it.countTotal != null && Number(it.qty) !== Number(it.countTotal) ? '；登记数量已人工改为 ' + it.qty + ' ' + (it.unit || '条') : '');
+  }
+  // 可以拍照计数的物品类型（按个数清点的）
+  const COUNT_KINDS = ['cigarette', 'ecig'];
+  function countNoteText(parts, unit) {
+    const sum = k => parts.reduce((a, p) => a + (Number(p[k]) || 0), 0);
+    const total = sum('n');
+    const detail = '自动识别 ' + sum('auto') + '，人工补 ' + sum('added') + '，人工剔除 ' + sum('removed');
+    return '图片计数' + (parts.length > 1 ? ' ' + parts.length + ' 张照片 ' + parts.map(p => p.n).join(' + ') + ' =' : '') + ' ' + total + ' ' + (unit || '条') + '（' + detail + '）';
   }
   function renderSeizedModal(focus) {
     const s = state.seizedEdit; const c = state.caseData;
@@ -2235,8 +2345,8 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     if (kind === 'cigarette') {
       const names = new Set(activeCatalog().items.map(i => i.name));
       Object.keys(state.barcodeDict).forEach(key => { const e = dictEntry(key); if (e && e.name) names.add(e.name); });
-      body = '<label class="field"><span>条码（输入后 6 位即可，或点"扫码"）</span><div class="row nowrap"><input type="text" name="barcode" class="grow code-input" inputmode="numeric" enterkeyhint="next" maxlength="40" value="' + esc(s.barcode) + '" placeholder="如：075015">' +
-        '<button type="button" class="btn btn-sm btn-primary" data-action="scan-barcode">扫码</button></div></label>' +
+      body = '<button type="button" class="btn btn-primary btn-block btn-scan" data-action="scan-barcode">扫描条烟条形码</button>' +
+        '<label class="field"><span>条码（扫不出时输入后 6 位；也可接扫码枪）</span><input type="text" name="barcode" class="code-input" inputmode="numeric" enterkeyhint="next" maxlength="40" value="' + esc(s.barcode) + '" placeholder="如：075015"></label>' +
         '<div id="barcode-msg" class="match-box">' + matchBoxHtml(s) + '</div>' +
         '<label class="field"><span>品规 *（也可输入品名搜索）</span><input type="text" name="brand" maxlength="40" list="brand-list" value="' + esc(s.brand) + '" placeholder="如：中华（硬）"><datalist id="brand-list">' + [...names].sort().map(b => '<option value="' + esc(b) + '">').join('') + '</datalist></label>' +
         qtyBlockHtml(s, '<label class="field" style="width:84px"><span>单位</span><select name="unit">' + UNITS.map(u => '<option' + (s.unit === u ? ' selected' : '') + '>' + u + '</option>').join('') + '</select></label>') +
@@ -2334,6 +2444,526 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
   }
   function focusSeized(name) { const el = modalRoot.querySelector('form[data-form="seized"] [name=' + name + ']'); if (el) { el.focus(); if (el.select) el.select(); } }
+  // 扫码：能直接用摄像头时实时扫码，否则拍照识别
+  function startSeizedScan() {
+    syncSeizedForm();
+    if (!barcodeSupported()) {
+      if (!state.seizedEdit.matchedCode) state.seizedEdit.barcodeMsg = '当前浏览器无法识别条码，请直接输入条码后 6 位';
+      renderSeizedModal('barcode'); toast('当前浏览器无法识别条码，请直接输入条码后 6 位', 'warn');
+      return;
+    }
+    if (!liveCameraSupported()) { toast('当前打开方式不能直接使用摄像头，已改用拍照识别', 'warn', 3000); scanByPhoto(); return; }
+    run(() => openScanner({ onCode: code => applyScannedCode(code, 'live'), onPhoto: scanByPhoto, onManual: () => focusSeized('barcode') }));
+  }
+  function scanByPhoto() { state.pendingCapture = { kind: 'barcode' }; cameraInput.value = ''; cameraInput.click(); }
+  function applyScannedCode(code, via) {
+    const s = state.seizedEdit; if (!s || modal.kind !== 'seized') return;
+    syncSeizedForm();
+    s.barcode = code; s.via = via;
+    const m = lookupCode(code);
+    if (m.length === 1) applyMatch(m[0]);
+    else { clearMatch(); s.barcodeMsg = '已识别条码 ' + code + '，但价格目录和条码库中都没有：请确认扫的是"条"包装上的条码，或手工填写品规和单价'; }
+    renderSeizedModal(m.length === 1 ? false : 'brand');
+    toast(m.length === 1 ? '已识别：' + s.brand + (Number(s.qty) > 0 ? '' : '。请填数量，或点"拍照计数"') : '已识别条码 ' + code + '，未查到品规', m.length === 1 ? 'ok' : 'warn', 3000);
+  }
+  // 拍照计数
+  async function startSeizedCount(file, source) {
+    const s = state.seizedEdit; if (!s) return;
+    const cig = (s.kind || 'cigarette') === 'cigarette';
+    await openCounter(file, { unit: s.unit || '条', brand: cig ? s.brand : itemName(s.kind, s.sub, s.spec), baseQty: Number(s.qty) || 0, source, onDone: applyCountResult });
+  }
+  async function applyCountResult(res) {
+    const s = state.seizedEdit; const c = state.caseData; if (!s || !c) return;
+    const cig = (s.kind || 'cigarette') === 'cigarette';
+    const name = cig ? s.brand : itemName(s.kind, s.sub, s.spec);
+    showBusy('正在保存计数照片…');
+    let p; try { p = await processPhoto(res.file, { caseNumber: c.number, label: '涉案物品计数' + (name ? ' ' + name : ''), source: res.source }); } finally { hideBusy(); }
+    const part = { n: res.n, auto: res.auto, added: res.added, removed: res.removed, at: Date.now() };
+    const base = Number(s.qty) || 0;
+    if (res.mode === 'add' && base > 0) { s.qty = String(Math.round((base + res.n) * 1000) / 1000); s.countParts = (s.countParts || []).concat(part); } else {
+      s.qty = String(res.n); s.countParts = [part];
+      // 重新计数（填入而非累加）：本次之前尚未保存的计数照片作废
+      if (s.newPhotoFromCount) Object.assign(s, { newPhoto: null, thumb: '', newPhotoFromCount: false });
+      s.extraPhotos = [];
+    }
+    // 物品还没有照片时，计数照片作为物品照片；已有照片时存为补充照片，不覆盖原照片
+    if (!s.thumb) Object.assign(s, { newPhoto: p, thumb: p.thumb, newPhotoFromCount: true, newPhotoCountN: res.n }); else (s.extraPhotos = s.extraPhotos || []).push({ p, n: res.n });
+    if (modal.kind === 'seized') renderSeizedModal(false);
+    toast('已填入数量 ' + s.qty + ' ' + (s.unit || '条') + '，计数照片随本条一起保存', 'ok', 3000);
+  }
+
+  /* ========================= 摄像头实时扫码 ========================= */
+  const scanner = { el: null, stream: null, track: null, caps: null, timer: 0, hit: null, opts: null, frame: 0, cv: null, torch: false, zoomed: false, audio: null };
+  function overlayOpen() { return !!(scanner.el || counter.el); }
+  function cameraErrorText(e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return '没有摄像头权限。请在浏览器的网站设置里允许使用摄像头后点"重试"，或改用"拍照识别"。';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return '没有找到可用的摄像头，请改用"拍照识别"或手动输入。';
+    if (n === 'NotReadableError' || n === 'AbortError') return '摄像头被其他应用占用，请关闭其他使用摄像头的应用后点"重试"。';
+    return '无法打开摄像头（' + (n || (e && e.message) || '未知原因') + '），请改用"拍照识别"。';
+  }
+  // opts: { onCode(code), onPhoto(), onManual(), onClose() }
+  async function openScanner(opts) {
+    closeScanner();
+    const el = document.createElement('div');
+    el.className = 'overlay scanner'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', '扫描条形码');
+    el.innerHTML = '<video playsinline muted autoplay></video>' +
+      '<div class="scan-top"><button type="button" class="btn btn-sm" data-sc="close">✕ 关闭</button><span class="scan-title">扫描条烟条形码</span><span class="scan-engine"></span></div>' +
+      '<div class="scan-aim"><i class="scan-line"></i></div>' +
+      '<div class="scan-status" aria-live="polite">正在打开摄像头…</div>' +
+      '<div class="scan-bottom"><button type="button" class="btn" data-sc="torch" hidden>手电筒</button><button type="button" class="btn" data-sc="zoom" hidden>放大</button>' +
+      '<button type="button" class="btn" data-sc="retry" hidden>重试</button><button type="button" class="btn" data-sc="photo">拍照识别</button><button type="button" class="btn" data-sc="manual">手动输入</button></div>';
+    $('#toast-root').innerHTML = '';
+    document.body.appendChild(el); document.body.classList.add('overlay-open');
+    Object.assign(scanner, { el, opts: opts || {}, hit: null, frame: 0, torch: false, zoomed: false, caps: null });
+    el.addEventListener('click', onScannerClick);
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (AC && !scanner.audio) scanner.audio = new AC(); } catch (e) { scanner.audio = null; }
+    await startScannerCamera(el);
+  }
+  function scannerStatus(el, text, bad) {
+    if (scanner.el !== el) return;
+    const st = el.querySelector('.scan-status'); st.textContent = text; st.classList.toggle('bad', !!bad);
+  }
+  function scannerFail(el, msg, canRetry) {
+    if (scanner.el !== el) return;
+    el.classList.add('failed');
+    scannerStatus(el, msg, true);
+    el.querySelector('[data-sc=retry]').hidden = !canRetry;
+  }
+  async function startScannerCamera(el) {
+    const det = await getNativeDetector();
+    if (scanner.el !== el) return;
+    el.querySelector('.scan-engine').textContent = det ? '浏览器自带识别' : zxingReady() ? '内置识别库' : '';
+    if (!det && !zxingReady()) return scannerFail(el, '当前浏览器无法识别条码，请手动输入条码后 6 位。', false);
+    if (!liveCameraSupported()) return scannerFail(el, '当前打开方式下浏览器不允许网页直接使用摄像头（需要 https 网址或本机打开），请点"拍照识别"。', false);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    } catch (e) { return scannerFail(el, cameraErrorText(e), true); }
+    if (scanner.el !== el) { stream.getTracks().forEach(t => t.stop()); return; }
+    scanner.stream = stream; scanner.track = stream.getVideoTracks()[0] || null;
+    el.classList.remove('failed'); el.querySelector('[data-sc=retry]').hidden = true;
+    const v = el.querySelector('video'); v.srcObject = stream;
+    try { await v.play(); } catch (e) { /* 由 autoplay 属性继续播放 */ }
+    setupCameraExtras(el);
+    scannerStatus(el, '把条烟上的条形码放进框内，距离 15–25 厘米，保持不动');
+    scanner.timer = setTimeout(scanTick, 150);
+  }
+  function setupCameraExtras(el) {
+    const t = scanner.track; if (!t || !t.getCapabilities) return;
+    let caps = {}; try { caps = t.getCapabilities() || {}; } catch (e) { return; }
+    scanner.caps = caps;
+    if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) t.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+    if (caps.torch) el.querySelector('[data-sc=torch]').hidden = false;
+    if (caps.zoom && caps.zoom.max >= 2) el.querySelector('[data-sc=zoom]').hidden = false;
+  }
+  // 取景框对应的视频区域（略放大，条码没完全放进框也能识别）
+  function frameCrop(v, aim, rot) {
+    const vr = v.getBoundingClientRect(), ar = aim.getBoundingClientRect();
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const s = Math.max(vr.width / vw, vr.height / vh) || 1;
+    const ox = (vr.width - vw * s) / 2, oy = (vr.height - vh * s) / 2;
+    let x0 = Math.max(0, (ar.left - ar.width * 0.3 - vr.left - ox) / s), y0 = Math.max(0, (ar.top - ar.height * 0.4 - vr.top - oy) / s);
+    let x1 = Math.min(vw, (ar.right + ar.width * 0.3 - vr.left - ox) / s), y1 = Math.min(vh, (ar.bottom + ar.height * 0.4 - vr.top - oy) / s);
+    if (!(x1 - x0 > 32 && y1 - y0 > 32)) { x0 = 0; y0 = 0; x1 = vw; y1 = vh; }
+    const W = x1 - x0, H = y1 - y0;
+    const k = Math.min(1, 960 / Math.max(W, H));
+    const ow = Math.max(1, Math.round(W * k)), oh = Math.max(1, Math.round(H * k));
+    const cv = scanner.cv || (scanner.cv = document.createElement('canvas'));
+    cv.width = rot ? oh : ow; cv.height = rot ? ow : oh;
+    const x = cv.getContext('2d', { willReadFrequently: true });
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    if (rot) { x.translate(cv.width, 0); x.rotate(Math.PI / 2); }
+    x.drawImage(v, x0, y0, W, H, 0, 0, ow, oh);
+    return cv;
+  }
+  async function scanTick() {
+    const el = scanner.el; if (!el || !scanner.stream) return;
+    const v = el.querySelector('video');
+    try {
+      if (v.readyState >= 2 && v.videoWidth) {
+        const rot = scanner.frame++ % 3 === 2 ? 90 : 0; // 每 3 帧试一次竖放的条码
+        const r = await decodeCanvas(frameCrop(v, el.querySelector('.scan-aim'), rot), false, false);
+        if (scanner.el !== el) return;
+        if (r) { onScanHit(el, r.value); if (scanner.el !== el) return; }
+      }
+    } catch (e) { /* 单帧识别失败不影响下一帧 */ }
+    if (scanner.el === el) scanner.timer = setTimeout(scanTick, 90);
+  }
+  // 连续两帧识别到同一条码才采用，避免误读
+  function onScanHit(el, code) {
+    const now = Date.now(); const h = scanner.hit;
+    if (h && h.code === code && now - h.at < 1500) { h.n++; h.at = now; } else scanner.hit = { code, n: 1, at: now };
+    if (scanner.hit.n < 2) { scannerStatus(el, '识别到 ' + code + '，请保持不动…'); return; }
+    const opts = scanner.opts;
+    beep(); try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) { /* 忽略 */ }
+    closeScanner();
+    if (opts.onCode) run(() => opts.onCode(code));
+  }
+  function beep() {
+    const ac = scanner.audio; if (!ac) return;
+    try {
+      if (ac.state === 'suspended') ac.resume();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = 1800; g.gain.value = 0.08; o.connect(g); g.connect(ac.destination);
+      o.start(); o.stop(ac.currentTime + 0.09);
+    } catch (e) { /* 没有声音不影响扫码 */ }
+  }
+  function closeScanner() {
+    const el = scanner.el; if (!el) return;
+    clearTimeout(scanner.timer); scanner.timer = 0;
+    if (scanner.stream) scanner.stream.getTracks().forEach(t => { try { t.stop(); } catch (e) { /* 忽略 */ } });
+    const v = el.querySelector('video'); if (v) v.srcObject = null;
+    el.remove();
+    Object.assign(scanner, { el: null, stream: null, track: null, caps: null, hit: null, opts: null });
+    if (!counter.el) document.body.classList.remove('overlay-open');
+  }
+  function onScannerClick(ev) {
+    const b = ev.target.closest('[data-sc]'); if (!b) return;
+    const a = b.dataset.sc; const opts = scanner.opts || {};
+    if (a === 'close') { closeScanner(); if (opts.onClose) opts.onClose(); return; }
+    if (a === 'manual') { closeScanner(); if (opts.onManual) opts.onManual(); return; }
+    if (a === 'photo') { closeScanner(); if (opts.onPhoto) opts.onPhoto(); return; } // 须在点击事件内同步调起拍照
+    if (a === 'retry') { run(() => openScanner(opts)); return; }
+    const t = scanner.track; if (!t) return;
+    if (a === 'torch') {
+      scanner.torch = !scanner.torch; b.classList.toggle('active', scanner.torch);
+      t.applyConstraints({ advanced: [{ torch: scanner.torch }] }).catch(() => toast('无法打开手电筒', 'warn'));
+    }
+    if (a === 'zoom' && scanner.caps && scanner.caps.zoom) {
+      const z = scanner.caps.zoom; scanner.zoomed = !scanner.zoomed; b.classList.toggle('active', scanner.zoomed);
+      t.applyConstraints({ advanced: [{ zoom: scanner.zoomed ? Math.min(2, z.max) : Math.max(1, z.min || 1) }] }).catch(() => {});
+    }
+  }
+
+  /* ========================= 图片计数 ========================= */
+  // 做法：用户在照片上框住其中一条，系统用归一化互相关（NCC）模板匹配在整张照片里找外观相同的，
+  // 标出编号；用户逐个核对，点标记剔除、点漏数的位置补上。只是辅助清点，数量以人工核对为准。
+  const COUNT = { area: 520, minSide: 10, floor: 0.3, scales: [0.8, 0.9, 1, 1.12, 1.25], defThr: 0.6, workMax: 1600 };
+  // 积分图（多一行一列，便于求任意矩形的和）
+  function integral(g, W, H, sq) {
+    const S = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) {
+      let row = 0; const o = y * W, so = (y + 1) * (W + 1), po = y * (W + 1);
+      for (let x = 0; x < W; x++) { const v = g[o + x]; row += sq ? v * v : v; S[so + x + 1] = S[po + x + 1] + row; }
+    }
+    return S;
+  }
+  // 按面积平均缩小灰度图（f ≤ 1）
+  function shrinkGray(g, W, H, f) {
+    const w = Math.max(1, Math.round(W * f)), h = Math.max(1, Math.round(H * f));
+    const S = integral(g, W, H, false); const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.floor(y * H / h), y1 = Math.max(y0 + 1, Math.floor((y + 1) * H / h));
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.floor(x * W / w), x1 = Math.max(x0 + 1, Math.floor((x + 1) * W / w));
+        out[y * w + x] = (S[y1 * (W + 1) + x1] - S[y0 * (W + 1) + x1] - S[y1 * (W + 1) + x0] + S[y0 * (W + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+      }
+    }
+    return { g: out, w, h };
+  }
+  // 从灰度图截取框选区域并按 k 倍缩放（双线性），rot 为 0/90/180/270；返回去均值后的模板
+  function cutTemplate(g, W, H, bx, by, bw, bh, k, rot) {
+    const tw0 = Math.max(3, Math.round(bw * k)), th0 = Math.max(3, Math.round(bh * k));
+    const sw = rot % 180 ? th0 : tw0, sh = rot % 180 ? tw0 : th0;
+    const t = new Float32Array(sw * sh);
+    const at = (x, y) => {
+      x = Math.min(W - 1, Math.max(0, x)); y = Math.min(H - 1, Math.max(0, y));
+      const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(W - 1, x0 + 1), y1 = Math.min(H - 1, y0 + 1), fx = x - x0, fy = y - y0;
+      return (g[y0 * W + x0] * (1 - fx) + g[y0 * W + x1] * fx) * (1 - fy) + (g[y1 * W + x0] * (1 - fx) + g[y1 * W + x1] * fx) * fy;
+    };
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        let u, v; // 旋转后模板坐标 (x, y) 对应未旋转模板坐标 (u, v)
+        if (rot === 0) { u = x; v = y; } else if (rot === 180) { u = tw0 - 1 - x; v = th0 - 1 - y; } else if (rot === 90) { u = y; v = th0 - 1 - x; } else { u = tw0 - 1 - y; v = x; }
+        t[y * sw + x] = at(bx + (u + 0.5) / k - 0.5, by + (v + 0.5) / k - 0.5);
+      }
+    }
+    let m = 0; for (let i = 0; i < t.length; i++) m += t[i]; m /= t.length;
+    let n2 = 0; for (let i = 0; i < t.length; i++) { t[i] -= m; n2 += t[i] * t[i]; }
+    return { t, w: sw, h: sh, norm: Math.sqrt(n2) };
+  }
+  // 一个模板在整图上的 NCC 局部峰值（先隔 2 像素粗算，再在峰值附近逐像素细算）
+  function nccPeaks(G, W, H, S1, S2, T, floor) {
+    const { t, w: tw, h: th, norm } = T; const n = tw * th; const out = [];
+    if (norm < 1e-3 * n || tw >= W || th >= H) return out;
+    const nx = W - tw + 1, ny = H - th + 1;
+    const score = (x, y) => {
+      let num = 0;
+      for (let j = 0; j < th; j++) { const go = (y + j) * W + x, to = j * tw; for (let i = 0; i < tw; i++) num += G[go + i] * t[to + i]; }
+      const a = y * (W + 1) + x, b = (y + th) * (W + 1) + x;
+      const s1 = S1[b + tw] - S1[a + tw] - S1[b] + S1[a], s2 = S2[b + tw] - S2[a + tw] - S2[b] + S2[a];
+      const v = s2 - s1 * s1 / n;
+      return v > 1e-6 * n ? num / (Math.sqrt(v) * norm) : 0;
+    };
+    const step = Math.min(tw, th) >= 8 ? 2 : 1;
+    const cw = Math.ceil(nx / step), ch = Math.ceil(ny / step);
+    const M = new Float32Array(cw * ch);
+    for (let cy = 0; cy < ch; cy++) for (let cx = 0; cx < cw; cx++) M[cy * cw + cx] = score(Math.min(nx - 1, cx * step), Math.min(ny - 1, cy * step));
+    const r = Math.max(1, Math.floor(Math.min(tw, th) * 0.35 / step));
+    for (let cy = 0; cy < ch; cy++) {
+      for (let cx = 0; cx < cw; cx++) {
+        const v = M[cy * cw + cx]; if (v < floor - 0.08) continue;
+        let isMax = true;
+        for (let dy = -r; dy <= r && isMax; dy++) {
+          const yy = cy + dy; if (yy < 0 || yy >= ch) continue;
+          for (let dx = -r; dx <= r; dx++) {
+            const xx = cx + dx; if (xx < 0 || xx >= cw || (!dx && !dy)) continue;
+            const u = M[yy * cw + xx]; if (u > v || (u === v && (dy < 0 || (dy === 0 && dx < 0)))) { isMax = false; break; }
+          }
+        }
+        if (!isMax) continue;
+        let bx = Math.min(nx - 1, cx * step), by = Math.min(ny - 1, cy * step), best = v;
+        if (step > 1) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = bx + dx, y = by + dy; if ((dx || dy) && x >= 0 && y >= 0 && x < nx && y < ny) { const s = score(x, y); if (s > best) { best = s; bx = x; by = y; } } }
+        if (best >= floor) out.push({ x: bx, y: by, w: tw, h: th, score: best });
+      }
+    }
+    return out;
+  }
+  function boxOverlap(a, b) {
+    const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)), iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    const inter = ix * iy; if (!inter) return 0;
+    return Math.max(inter / (a.w * a.h + b.w * b.h - inter), inter / Math.min(a.w * a.h, b.w * b.h) * 0.6);
+  }
+  // gray：整张照片灰度（W×H）；box：框选的一条（同一坐标系）。返回按得分从高到低、已去除重叠的候选框
+  function findSimilar(gray, W, H, box, opts) {
+    opts = opts || {};
+    let f = Math.sqrt(COUNT.area / Math.max(1, box.w * box.h));
+    f = Math.min(1, Math.max(f, COUNT.minSide / Math.max(1, Math.min(box.w, box.h))));
+    const s = f < 1 ? shrinkGray(gray, W, H, f) : { g: gray, w: W, h: H };
+    const fx = s.w / W, fy = s.h / H;
+    const S1 = integral(s.g, s.w, s.h, false), S2 = integral(s.g, s.w, s.h, true);
+    const all = [];
+    for (const k of COUNT.scales) {
+      for (const rot of opts.rotate ? [0, 90, 180, 270] : [0, 180]) {
+        const T = cutTemplate(s.g, s.w, s.h, box.x * fx, box.y * fy, box.w * fx, box.h * fy, k, rot);
+        nccPeaks(s.g, s.w, s.h, S1, S2, T, COUNT.floor).forEach(p => all.push({ x: p.x / fx, y: p.y / fy, w: p.w / fx, h: p.h / fy, score: Math.round(p.score * 1e4) / 1e4 }));
+      }
+    }
+    all.sort((a, b) => b.score - a.score);
+    const kept = [];
+    for (const c of all) if (!kept.some(k => boxOverlap(k, c) > 0.3)) kept.push(c);
+    return kept;
+  }
+  // 自动阈值：在得分序列（不含框选本身）中找最大落差；用户可再用滑块调整
+  function autoThreshold(cands) {
+    const s = cands.map(c => c.score).filter(v => v < 0.995);
+    if (s.length < 2) return COUNT.defThr;
+    let best = -1, thr = COUNT.defThr;
+    for (let i = 0; i < s.length - 1; i++) {
+      if (s[i] < 0.45) break;
+      const gap = s[i] - s[i + 1];
+      if (gap > best) { best = gap; thr = (s[i] + s[i + 1]) / 2; }
+    }
+    if (s[s.length - 1] >= 0.45 && s[s.length - 1] - COUNT.floor > best) thr = (s[s.length - 1] + COUNT.floor) / 2;
+    return Math.min(0.85, Math.max(0.4, Math.round(thr * 100) / 100));
+  }
+  // 按行编号：从上到下分行，行内从左到右
+  function numberMarks(marks) {
+    if (!marks.length) return marks;
+    const hs = marks.map(m => m.h).sort((a, b) => a - b); const mh = hs[hs.length >> 1];
+    const sorted = marks.slice().sort((a, b) => (a.y + a.h / 2) - (b.y + b.h / 2));
+    const rows = []; let row = null;
+    sorted.forEach(m => { const cy = m.y + m.h / 2; if (!row || cy - row.start > mh * 0.6) { row = { start: cy, items: [] }; rows.push(row); } row.items.push(m); });
+    const out = [];
+    rows.forEach(r => r.items.sort((a, b) => (a.x + a.w / 2) - (b.x + b.w / 2)).forEach(m => out.push(m)));
+    out.forEach((m, i) => { m.no = i + 1; });
+    return out;
+  }
+
+  const counter = { el: null, opts: null, img: null, W: 0, H: 0, gray: null, box: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null };
+  // opts: { unit, brand, baseQty, source, onDone(result) }
+  async function openCounter(file, opts) {
+    closeCounter();
+    showBusy('正在读取照片…');
+    let work, gray;
+    try {
+      const src = await loadImageFromFile(file);
+      work = scaleToCanvas(src, COUNT.workMax);
+      if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
+      const d = work.getContext('2d').getImageData(0, 0, work.width, work.height).data;
+      gray = new Float32Array(work.width * work.height);
+      for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+    } finally { hideBusy(); }
+    const el = document.createElement('div');
+    el.className = 'overlay counter'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', '图片计数');
+    el.innerHTML = '<div class="cnt-top"><button type="button" class="btn btn-sm" data-ct="close">✕ 取消</button><strong>图片计数' + (opts.brand ? '：' + esc(opts.brand) : '') + '</strong>' +
+      '<button type="button" class="btn btn-sm" data-ct="zoom">放大</button></div>' +
+      '<div class="cnt-tip"></div><div class="cnt-stage"><canvas></canvas></div><div class="cnt-panel"></div>';
+    $('#toast-root').innerHTML = '';
+    document.body.appendChild(el); document.body.classList.add('overlay-open');
+    Object.assign(counter, { el, opts, img: work, W: work.width, H: work.height, gray, box: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null });
+    el.addEventListener('click', onCounterClick);
+    el.addEventListener('input', onCounterInput);
+    el.addEventListener('change', onCounterInput);
+    const cv = el.querySelector('canvas');
+    cv.addEventListener('pointerdown', onCounterPointer);
+    cv.addEventListener('pointermove', onCounterPointer);
+    cv.addEventListener('pointerup', onCounterPointer);
+    cv.addEventListener('pointercancel', onCounterPointer);
+    renderCounter();
+  }
+  function closeCounter() {
+    if (!counter.el) return;
+    counter.el.remove();
+    Object.assign(counter, { el: null, opts: null, img: null, gray: null, cands: [], removed: [], added: [], drag: null });
+    if (!scanner.el) document.body.classList.remove('overlay-open');
+  }
+  function counterTpl() { const b = counter.box; return b ? { w: b.w, h: b.h } : { w: 40, h: 20 }; }
+  function counterMarks() {
+    const inside = (p, b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+    const kept = [], removed = [];
+    counter.cands.filter(c => c.score >= counter.thr).forEach(b => (counter.removed.some(p => inside(p, b)) ? removed : kept).push(b));
+    const t = counterTpl();
+    const added = counter.added.map(p => ({ x: p.x - t.w / 2, y: p.y - t.h / 2, w: t.w, h: t.h, added: true, p }));
+    const all = numberMarks(kept.concat(added));
+    return { kept, removed, added, all };
+  }
+  function counterResultText(m) {
+    return '自动识别 ' + (m.kept.length + m.removed.length) + (m.added.length ? '，人工补 ' + m.added.length : '') + (m.removed.length ? '，人工剔除 ' + m.removed.length : '');
+  }
+  function renderCounter() {
+    const el = counter.el; if (!el) return;
+    const unit = counter.opts.unit || '条';
+    el.querySelector('.cnt-tip').innerHTML = counter.mode === 'box'
+      ? '<strong>第 1 步：</strong>用手指在照片上<strong>框住其中一条</strong>（框紧，包含商标图案）'
+      : '<strong>第 2 步：</strong>逐个核对编号。点标记可剔除，点漏数的' + esc(unit) + '可补上';
+    el.querySelector('[data-ct=zoom]').textContent = counter.zoom === 1 ? '放大' : counter.zoom + '×';
+    const panel = el.querySelector('.cnt-panel');
+    if (counter.mode === 'box') {
+      panel.innerHTML = '<div class="small muted">照片要拍全、拍正，尽量让每' + esc(unit) + '露出同一面；被遮挡、叠压的数不出来，需要人工补上。</div>' +
+        '<div class="btn-row"><button type="button" class="btn" data-ct="close">取消</button></div>';
+    } else {
+      const m = counterMarks(); const n = m.all.length; const base = Number(counter.opts.baseQty) || 0;
+      panel.innerHTML = '<div class="cnt-count"><span class="cnt-n">' + n + '</span> ' + esc(unit) + '<span class="small muted">（' + counterResultText(m) + '）</span></div>' +
+        '<label class="cnt-thr"><span class="small">宽松</span><input type="range" min="0.35" max="0.95" step="0.01" value="' + counter.thr + '" data-ct="thr" aria-label="识别严格程度"><span class="small">严格</span></label>' +
+        '<label class="check small"><input type="checkbox" data-ct="rotate"' + (counter.rotate ? ' checked' : '') + '>有横放、竖放方向不一致的</label>' +
+        '<div class="btn-row"><button type="button" class="btn" data-ct="rebox">重新框选</button>' +
+        (base > 0 ? '<button type="button" class="btn" data-ct="done" data-mode="replace"' + (n ? '' : ' disabled') + '>填入 ' + n + '</button><button type="button" class="btn btn-primary" data-ct="done" data-mode="add"' + (n ? '' : ' disabled') + '>累加为 ' + (Math.round((base + n) * 1000) / 1000) + '</button>'
+          : '<button type="button" class="btn btn-primary" data-ct="done" data-mode="replace"' + (n ? '' : ' disabled') + '>确认 ' + n + ' ' + esc(unit) + '</button>') + '</div>';
+    }
+    drawCounter();
+  }
+  function drawCounter() {
+    const el = counter.el; if (!el) return;
+    const stage = el.querySelector('.cnt-stage'), cv = el.querySelector('canvas');
+    const cssW = Math.max(100, stage.clientWidth * counter.zoom), cssH = cssW * counter.H / counter.W;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+    cv.classList.toggle('boxing', counter.mode === 'box');
+    const x = cv.getContext('2d'); const k = cv.width / counter.W;
+    x.drawImage(counter.img, 0, 0, cv.width, cv.height);
+    const rect = (b, color, lw, dash) => { x.save(); x.strokeStyle = color; x.lineWidth = lw * dpr; if (dash) x.setLineDash([6 * dpr, 4 * dpr]); x.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k); x.restore(); };
+    if (counter.mode === 'box') {
+      if (counter.drag && counter.drag.box) rect(counter.drag.box, '#2f80ed', 2.5, true);
+      return;
+    }
+    const m = counterMarks();
+    if (counter.box) rect(counter.box, '#2f80ed', 2.5, true);
+    drawMarks(x, m, k, dpr);
+  }
+  // 在画布上画编号标记；k 为照片坐标到画布像素的比例，u 为线宽/字号单位
+  function drawMarks(x, m, k, u) {
+    const rOf = b => Math.max(9 * u, Math.min(20 * u, Math.min(b.w, b.h) * k * 0.3));
+    m.removed.forEach(b => {
+      const cx = (b.x + b.w / 2) * k, cy = (b.y + b.h / 2) * k, r = rOf(b);
+      x.save(); x.strokeStyle = '#d93025'; x.lineWidth = 3 * u; x.beginPath(); x.moveTo(cx - r * 0.7, cy - r * 0.7); x.lineTo(cx + r * 0.7, cy + r * 0.7); x.moveTo(cx + r * 0.7, cy - r * 0.7); x.lineTo(cx - r * 0.7, cy + r * 0.7); x.stroke(); x.restore();
+    });
+    m.all.forEach(b => {
+      const cx = (b.x + b.w / 2) * k, cy = (b.y + b.h / 2) * k, r = rOf(b);
+      x.save();
+      if (!b.added) { x.strokeStyle = 'rgba(30,160,90,.9)'; x.lineWidth = 1.5 * u; x.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k); }
+      x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fillStyle = b.added ? 'rgba(232,128,0,.92)' : 'rgba(22,140,75,.92)'; x.fill();
+      x.lineWidth = 1.5 * u; x.strokeStyle = '#fff'; x.stroke();
+      x.fillStyle = '#fff'; x.font = 'bold ' + Math.round(r * (b.no > 99 ? 0.8 : 1)) + 'px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(String(b.no), cx, cy + r * 0.05);
+      x.restore();
+    });
+  }
+  function counterPoint(ev) {
+    const cv = counter.el.querySelector('canvas'); const r = cv.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) / r.width * counter.W, y: (ev.clientY - r.top) / r.height * counter.H };
+  }
+  function onCounterPointer(ev) {
+    if (!counter.el || counter.mode !== 'box') return;
+    const cv = ev.currentTarget; const p = counterPoint(ev);
+    if (ev.type === 'pointerdown') { ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ } counter.drag = { x0: p.x, y0: p.y, box: null }; return; }
+    if (!counter.drag) return;
+    const d = counter.drag;
+    const box = { x: Math.max(0, Math.min(d.x0, p.x)), y: Math.max(0, Math.min(d.y0, p.y)) };
+    box.w = Math.min(counter.W, Math.max(d.x0, p.x)) - box.x; box.h = Math.min(counter.H, Math.max(d.y0, p.y)) - box.y;
+    d.box = box;
+    if (ev.type === 'pointermove') { drawCounter(); return; }
+    counter.drag = null;
+    if (ev.type === 'pointercancel') { drawCounter(); return; }
+    const minSide = Math.max(8, counter.W / 200);
+    if (box.w < minSide || box.h < minSide) { drawCounter(); toast('框得太小了，请框住整条', 'warn'); return; }
+    if (box.w * box.h > counter.W * counter.H * 0.5) { drawCounter(); toast('框得太大了，只框其中一条', 'warn'); return; }
+    counter.box = box;
+    run(runCounterMatch);
+  }
+  async function runCounterMatch() {
+    if (!counter.el || !counter.box) return;
+    showBusy('正在查找相同的物品…');
+    await new Promise(r => setTimeout(r, 30)); // 先让提示显示出来
+    let cands;
+    try { cands = findSimilar(counter.gray, counter.W, counter.H, counter.box, { rotate: counter.rotate }); } finally { hideBusy(); }
+    if (!counter.el) return;
+    if (!cands.length) { counter.box = null; drawCounter(); toast('框选的区域没有明显图案，请框住整条（包含商标图案）后重试', 'warn', 4000); return; }
+    Object.assign(counter, { cands, thr: autoThreshold(cands), removed: [], added: [], mode: 'check' });
+    renderCounter();
+  }
+  function onCounterInput(ev) {
+    const t = ev.target; if (!counter.el || !t.dataset.ct) return;
+    if (t.dataset.ct === 'thr') { counter.thr = Number(t.value); if (ev.type === 'change') renderCounter(); else { const m = counterMarks(); counter.el.querySelector('.cnt-n').textContent = m.all.length; drawCounter(); } }
+    if (t.dataset.ct === 'rotate' && ev.type === 'change') { counter.rotate = t.checked; run(runCounterMatch); }
+  }
+  function onCounterClick(ev) {
+    if (!counter.el) return;
+    const b = ev.target.closest('[data-ct]');
+    if (b && b.tagName === 'BUTTON') {
+      const a = b.dataset.ct;
+      if (a === 'close') { closeCounter(); return; }
+      if (a === 'zoom') { counter.zoom = counter.zoom >= 3 ? 1 : counter.zoom + 1; renderCounter(); return; }
+      if (a === 'rebox') { Object.assign(counter, { mode: 'box', box: null, cands: [], removed: [], added: [] }); renderCounter(); return; }
+      if (a === 'done') { run(() => finishCounter(b.dataset.mode)); return; }
+      return;
+    }
+    if (ev.target.tagName !== 'CANVAS' || counter.mode !== 'check') return;
+    // 核对：点已计数的标记 → 剔除；点已剔除的 → 恢复；点人工补的 → 撤销；点空白处 → 补一个
+    const p = counterPoint(ev); const m = counterMarks(); const t = counterTpl();
+    const inside = bx => p.x >= bx.x && p.x <= bx.x + bx.w && p.y >= bx.y && p.y <= bx.y + bx.h;
+    const near = (bx, f) => Math.hypot(p.x - (bx.x + bx.w / 2), p.y - (bx.y + bx.h / 2)) <= Math.min(bx.w, bx.h) * f;
+    const add = m.added.find(a => near(a, 0.5));
+    if (add) { counter.added = counter.added.filter(q => q !== add.p); renderCounter(); return; }
+    const rem = m.removed.find(inside);
+    if (rem) { counter.removed = counter.removed.filter(q => !(q.x >= rem.x && q.x <= rem.x + rem.w && q.y >= rem.y && q.y <= rem.y + rem.h)); renderCounter(); return; }
+    const hit = m.kept.find(inside);
+    if (hit) { counter.removed.push({ x: hit.x + hit.w / 2, y: hit.y + hit.h / 2 }); renderCounter(); return; }
+    counter.added.push({ x: Math.min(counter.W - t.w / 2, Math.max(t.w / 2, p.x)), y: Math.min(counter.H - t.h / 2, Math.max(t.h / 2, p.y)) });
+    renderCounter();
+  }
+  // 生成带编号标记的计数照片（顶部注明计数结果），交给调用方
+  async function finishCounter(mode) {
+    if (!counter.el) return;
+    const m = counterMarks(); const n = m.all.length; if (!n) return;
+    const opts = counter.opts; const unit = opts.unit || '条';
+    const cv = document.createElement('canvas'); cv.width = counter.W; cv.height = counter.H;
+    const x = cv.getContext('2d'); x.drawImage(counter.img, 0, 0);
+    const u = Math.max(1, Math.min(counter.W, counter.H) / 700);
+    drawMarks(x, m, 1, u);
+    const fs = Math.round(Math.max(16, Math.min(counter.W, counter.H) * 0.032));
+    const text = '图片计数：' + n + ' ' + unit + '（' + counterResultText(m) + '）' + (opts.brand ? '　' + opts.brand : '');
+    x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 0, counter.W, Math.round(fs * 1.9));
+    x.fillStyle = '#fff'; x.font = 'bold ' + fs + 'px -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'; x.textBaseline = 'middle';
+    x.fillText(text, Math.round(fs * 0.6), Math.round(fs * 0.95), counter.W - fs * 1.2);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+    const file = new File([blob], 'count.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+    const result = { n, auto: m.kept.length + m.removed.length, added: m.added.length, removed: m.removed.length, mode: mode === 'add' ? 'add' : 'replace', file, source: opts.source };
+    closeCounter();
+    if (opts.onDone) await opts.onDone(result);
+  }
 
   /* ========================= 业务动作 ========================= */
   async function openCase(id, fromPop) {
@@ -2386,6 +3016,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
   async function handleCapturedFile(file, ctx) {
     const c = state.caseData;
     if (ctx.kind === 'barcode') return handleBarcodeFile(file);
+    if (ctx.kind === 'count') return startSeizedCount(file, ctx.source);
     if (!c) return;
     let label = '补充照片';
     if (ctx.kind === 'evidence') label = itemLabel(c, ctx.itemId).split(' / ')[1];
@@ -2395,7 +3026,10 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     try { p = await processPhoto(file, { caseNumber: c.number, label, source: ctx.source }); } finally { hideBusy(); }
 
     if (ctx.kind === 'seizedPhoto') {
-      state.seizedEdit.newPhoto = p; state.seizedEdit.thumb = p.thumb;
+      const s = state.seizedEdit;
+      // 换拍物品照片时，原来作为物品照片的计数照片改存为补充照片，不丢弃
+      if (s.newPhoto && s.newPhotoFromCount) (s.extraPhotos = s.extraPhotos || []).push({ p: s.newPhoto, n: s.newPhotoCountN });
+      Object.assign(s, { newPhoto: p, thumb: p.thumb, newPhotoFromCount: false });
       renderSeizedModal(false); qualityToast(p); return;
     }
     if (ctx.kind === 'extra') {
@@ -2437,7 +3071,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     let r; try { r = await tryDetectBarcode(file); } finally { hideBusy(); }
     const s = state.seizedEdit; if (!s) return;
     if (r.value) {
-      s.barcode = r.value;
+      s.barcode = r.value; s.via = 'photo';
       const m = lookupCode(r.value);
       if (m.length === 1) applyMatch(m[0]);
       else { clearMatch(); s.barcodeMsg = '已识别条码，但价格目录和条码库中没有该条码：请确认扫的是"条"包装上的条码，或手工填写品规和单价'; }
@@ -2452,7 +3086,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       renderSeizedModal(m.length === 1 ? 'qty' : 'brand');
       toast(m.length === 1 ? '已识别：' + s.brand : '已识别条码 ' + r.value + '，未查到品规', m.length === 1 ? 'ok' : 'warn', 2000);
     } else {
-      s.barcodeMsg = r.error === 'notfound' ? '未识别到条码，请对准条码重拍，或直接输入条码后 6 位' : '条码识别失败，请输入条码后 6 位';
+      s.barcodeMsg = r.error === 'notfound' ? '未识别到条码：请让条码横放、占满画面中间、对好焦后重拍，或直接输入条码后 6 位' : r.error === 'unsupported' ? '当前浏览器无法识别条码，请输入条码后 6 位' : '条码识别失败，请输入条码后 6 位';
       renderSeizedModal('barcode');
       toast(s.barcodeMsg, 'warn');
     }
@@ -2472,6 +3106,11 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       priceExit: s.priceSource === 'catalog' && !!s.priceExit, priceVersion: s.priceSource === 'catalog' ? activeCatalog().version : ''
     };
     if (!cig) Object.assign(item, { sub: s.kind === 'ecig' ? s.sub : '', spec: s.spec });
+    // 本次图片计数结果（数量依据）
+    const parts = s.countParts || [];
+    const countNote = parts.length ? countNoteText(parts, item.unit) : '';
+    if (parts.length) Object.assign(item, { countNote, countTotal: Math.round(parts.reduce((a, p) => a + p.n, 0) * 1000) / 1000 });
+    const countLog = countNote ? '；' + countNote + (Number(item.qty) !== item.countTotal ? '，登记数量人工改为 ' + item.qty + item.unit : '') : '';
     // 同一品规（卷烟看条码，其他物品看名称）、同一单位已登记过：询问是否合并数量
     let mergeInto = null;
     if (!s.id && (code || !cig) && Number(item.qty) > 0) {
@@ -2488,7 +3127,14 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       const photoId = await storePhoto(s.newPhoto); if (!photoId) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
       photo = photoRecord(s.newPhoto, photoId);
     }
+    // 物品已有照片时，计数照片存为补充照片
+    const extraRecs = [];
+    for (const e of (s.extraPhotos || [])) {
+      const pid = await storePhoto(e.p); if (!pid) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
+      extraRecs.push(Object.assign(photoRecord(e.p, pid), { id: uid(), caption: '图片计数：' + (item.brand || code || kindLabelOf(item)) + ' ' + e.n + item.unit }));
+    }
     let oldPhotoId = null;
+    const addExtras = cc => extraRecs.forEach(x => { cc.extras.push(x); addLog(cc, '添加补充照片', x.caption); });
     const saved = await mutateCase(c.id, cc => {
       if (mergeInto) {
         const t = cc.seizedItems.find(x => x.id === mergeInto);
@@ -2496,7 +3142,10 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
           const before = t.qty;
           t.qty = Math.round((Number(t.qty) + Number(item.qty)) * 1000) / 1000;
           if (photo && !t.photoId) Object.assign(t, { photoId: photo.photoId, thumb: photo.thumb, capturedAt: photo.capturedAt, sha256: photo.sha256, geo: photo.geo, source: photo.source });
-          addLog(cc, '合并涉案物品数量', (t.brand || code) + ' ' + before + ' + ' + item.qty + ' = ' + t.qty + t.unit);
+          else if (photo) extraRecs.unshift(Object.assign({}, photo, { id: uid(), caption: '涉案物品：' + (t.brand || code) + '（合并登记）' }));
+          if (countNote) { t.countNote = (t.countNote ? t.countNote + '；' : '') + '合并登记部分：' + countNote; t.countTotal = null; }
+          addLog(cc, '合并涉案物品数量', (t.brand || code) + ' ' + before + ' + ' + item.qty + ' = ' + t.qty + t.unit + countLog);
+          addExtras(cc);
           return;
         }
       }
@@ -2505,7 +3154,8 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       const merged = Object.assign({}, prev, item);
       if (photo) { oldPhotoId = prev.photoId || null; Object.assign(merged, { photoId: photo.photoId, thumb: photo.thumb, capturedAt: photo.capturedAt, sha256: photo.sha256, geo: photo.geo, source: photo.source }); }
       if (i >= 0) cc.seizedItems[i] = merged; else cc.seizedItems.push(merged);
-      addLog(cc, i >= 0 ? '修改涉案物品' : '登记涉案物品', '【' + kindLabelOf(item) + '】' + (item.brand || '品规未填') + ' ' + (item.qty || '?') + item.unit + (item.barcode ? '，条码 ' + item.barcode : '') + (price !== '' ? '，单价 ' + price + ' 元/' + item.priceUnit + (item.priceSource === 'manual' ? '（手工录入）' : '') : ''));
+      addLog(cc, i >= 0 ? '修改涉案物品' : '登记涉案物品', '【' + kindLabelOf(item) + '】' + (item.brand || '品规未填') + ' ' + (item.qty || '?') + item.unit + (item.barcode ? '，条码 ' + item.barcode : '') + (price !== '' ? '，单价 ' + price + ' 元/' + item.priceUnit + (item.priceSource === 'manual' ? '（手工录入）' : '') : '') + countLog);
+      addExtras(cc);
     });
     if (!saved) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
     if (oldPhotoId) Store.del(photoKey(oldPhotoId), true);
@@ -2524,7 +3174,10 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     render();
     if (next) {
       state.seizedEdit = cig ? blankSeized(item.unit === '支' ? '条' : item.unit) : blankSeized(null, item.kind, item.sub || '烟弹');
-      renderSeizedModal(cig ? 'barcode' : 'qty');
+      // 上一条是摄像头扫码录入的：直接打开摄像头扫下一个品规
+      const rescan = cig && s.via === 'live' && liveCameraSupported();
+      renderSeizedModal(rescan ? false : cig ? 'barcode' : 'qty');
+      if (rescan) startSeizedScan();
       toast((mergeInto ? '已合并：' : '已保存：') + label + '，请继续录入', 'ok', 2000);
     } else {
       closeModal(); state.seizedEdit = null;
@@ -2918,6 +3571,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
       const p = priceLine(it);
       L.push('    单价：' + (p.hasPrice ? p.price + ' 元/' + p.pUnit + '（' + (it.priceSource === 'catalog' ? '价格目录' + (it.priceVersion ? ' ' + it.priceVersion : '') : it.priceSource === 'local' ? '本地条码库' : it.priceSource === 'standard' ? '系统标准价' : '手工录入') + '）' : '未核价') +
         (p.amount != null ? '　小计：' + fmtMoney(p.amount) + ' 元' : '') + (p.notes.length ? '　备注：' + p.notes.join('；') : ''));
+      if (it.countNote) L.push('    数量依据：' + countNoteDisplay(it));
       const f = files.find(x => x.group === 'seized' && x.seizedIndex === i);
       if (f) photoLines(f);
     });
@@ -3308,7 +3962,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
         syncSeizedForm();
         const s = state.seizedEdit; const k = el.dataset.k;
         if (s.kind === k) return;
-        const keep = { id: s.id, qty: s.qty, thumb: s.thumb, newPhoto: s.newPhoto };
+        const keep = { id: s.id, qty: s.qty, thumb: s.thumb, newPhoto: s.newPhoto, newPhotoFromCount: s.newPhotoFromCount, newPhotoCountN: s.newPhotoCountN, countParts: s.countParts, extraPhotos: s.extraPhotos };
         state.seizedEdit = Object.assign(blankSeized(k === 'cigarette' ? '条' : null, k, s.sub), keep);
         renderSeizedModal(k === 'cigarette' ? 'barcode' : false);
         return;
@@ -3353,15 +4007,13 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
         if (saved && removed && removed.photoId) Store.del(photoKey(removed.photoId), true);
         render(); return;
       }
-      case 'scan-barcode': {
+      case 'scan-barcode': startSeizedScan(); return;
+      case 'seized-scan': state.seizedEdit = blankSeized('条'); renderSeizedModal(false); startSeizedScan(); return;
+      case 'count-photo': {
         syncSeizedForm();
-        if (!barcodeSupported()) {
-          if (!state.seizedEdit.matchedCode) state.seizedEdit.barcodeMsg = '当前浏览器不支持条码自动识别，请直接输入条码后 6 位';
-          renderSeizedModal('barcode'); toast('当前浏览器不支持条码自动识别，请直接输入条码后 6 位', 'warn');
-          return;
-        }
-        state.pendingCapture = { kind: 'barcode' };
-        cameraInput.value = ''; cameraInput.click();
+        state.pendingCapture = { kind: 'count' };
+        const inp = el.dataset.src === 'album' ? albumInput : cameraInput;
+        inp.value = ''; inp.click();
         return;
       }
       case 'package': await generatePackage(); return;
@@ -3668,6 +4320,9 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
     if (state.user && state.view === 'cases' && !modal.kind && !document.hidden) run(() => refreshList(true));
   }, REFRESH_MS);
   document.addEventListener('visibilitychange', () => { if (document.hidden && state.view === 'record') run(() => flushRecord()); });
+  // 切到后台时关闭摄像头，避免一直占用
+  document.addEventListener('visibilitychange', () => { if (document.hidden && scanner.el) closeScanner(); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && overlayOpen()) { closeScanner(); closeCounter(); } });
   window.addEventListener('pagehide', () => { if (recTimer) saveRecordNow(); });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state.user && state.view === 'cases' && !modal.kind) run(() => refreshList(true));
@@ -3712,7 +4367,7 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
   // 供自动化测试读取的只读接口
   window.__EVIDENCE_APP__ = {
     version: APP_VERSION,
-    analyzeImageData, checkGtin, seizedItemValid, safeName, parseIdNo, recordModel, modelDocx, modelHtml, itemsSummaryText,
+    analyzeImageData, checkGtin, seizedItemValid, findSimilar, autoThreshold, numberMarks, safeName, parseIdNo, recordModel, modelDocx, modelHtml, itemsSummaryText,
     get backend() { return Store.backend; },
     get idle() { return running === 0; },
     get state() { return { view: state.view, user: state.user && { id: state.user.id, name: state.user.name, role: state.user.role }, caseId: state.caseId, recordId: state.recordId }; }

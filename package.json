@@ -1,13 +1,16 @@
 {
   "name": "tobacco-evidence-collector",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "涉烟案件现场证据采集系统（单文件 HTML）",
   "scripts": {
     "build": "node build.js",
-    "test": "node build.js && node tests/run-all.js"
+    "test": "node build.js && node tests/run-all.js",
+    "build:zxing": "esbuild scripts/zxing-lite/entry.js --bundle --minify --format=iife --target=es2017 --legal-comments=none --banner:js=\"/*! ZXing for JavaScript 0.23.0 (EAN/UPC 部分) https://github.com/zxing-js/library  Apache License 2.0 */\" --outfile=vendor/zxing-lite.min.js"
   },
   "devDependencies": {
+    "@zxing/library": "0.23.0",
+    "esbuild": "0.28.2",
     "jszip": "3.10.1",
     "playwright": "1.56.1"
   }

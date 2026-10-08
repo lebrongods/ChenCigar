@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
 
-const suites = ['core', 'accounts', 'seized', 'price', 'items', 'records', 'p0', 'p1'].map(n => ({ name: n, tests: require('./' + n + '.test.js') }));
+const suites = ['core', 'accounts', 'seized', 'scan', 'price', 'items', 'records', 'p0', 'p1'].map(n => ({ name: n, tests: require('./' + n + '.test.js') }));
 const only = process.argv[2];
 
 (async () => {
