@@ -283,15 +283,57 @@ module.exports = [
     }
   },
   {
-    name: '图片计数算法：合成的码放照片（透视、轻微旋转、调头、光照不均、模糊噪声、混入外观相近的品牌）计数准确',
+    name: '图片计数："限定范围"后范围外的不计数（不算人工剔除），计数照片标出范围；目标在照片里太小时提示走近重拍',
+    fn: async () => {
+      const w = L.createWorld();
+      const pile = await S.pilePhoto('pile-e', { rows: 5, cols: 4, seed: 9 });
+      const tiny = await S.shelfPhoto('shelf-tiny', { scale: 0.75, seed: 13 });
+      const p = await newCase(w, {}, 'SC-005'); const page = p.page;
+      try {
+        await page.click('[data-action=seized-add]');
+        await page.fill('form[data-form=seized] [name=barcode]', '075015');
+        await page.waitForSelector('#barcode-msg:has-text("中华（硬）")');
+        let [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-action=count-photo][data-src=album]')]);
+        await fc.setFiles(pile.file);
+        await page.waitForSelector('.counter canvas.boxing');
+        await boxFirst(page, pile, 0);
+        assert(await countNow(page) === 20, '全图应为 20：' + await countNow(page));
+        assert(!(await page.$('.cnt-warn')), '目标够大时不应提示');
+        await page.click('.counter [data-ct=region]');
+        await page.waitForSelector('.counter canvas.boxing');
+        const top = pile.boxes[0], last = pile.boxes[7]; // 只框前两排
+        await dragOnCounter(page, pile.W, pile.H, { x: top.x - 10, y: top.y - 10 }, { x: last.x + last.w + 10, y: last.y + last.h + 2 });
+        await page.waitForSelector('.counter [data-ct=region-clear]');
+        assert(await countNow(page) === 8, '限定范围后应为 8：' + await countNow(page));
+        const txt = await page.textContent('.cnt-panel');
+        assert(txt.includes('限定范围内自动识别 8') && !txt.includes('剔除'), '范围外的不算人工剔除：' + txt);
+        await page.click('.counter [data-ct=done]');
+        await page.waitForFunction(() => document.querySelector('form[data-form=seized] [name=qty]').value === '8');
+        assert((await page.textContent('.count-box')).includes('限定了计数范围'), '数量依据应注明限定了计数范围');
+        [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-action=count-photo][data-src=album]')]);
+        await fc.setFiles(tiny.file);
+        await page.waitForSelector('.counter canvas.boxing');
+        await boxFirst(page, tiny, 7);
+        await page.waitForSelector('.cnt-warn:has-text("太小")');
+        assert(await countNow(page) === 3, '小目标难例应数出 3：' + await countNow(page));
+        return '';
+      } finally { await p.close(); }
+    }
+  },
+  {
+    name: '图片计数算法：合成照片计数准确——码放（透视、旋转、调头、光照不均、模糊噪声、外观相近品牌）和难例（条烟竖立在白色亮面柜上、有倒影和塑料袋、多品牌混放、目标小）',
     fn: async () => {
       const w = L.createWorld();
       const configs = [
+        { name: '竖立在白柜上（有倒影、塑料袋）', shelf: true, o: {}, pick: 1, brand: 'lotus' },
+        { name: '竖立·更糊', shelf: true, o: { blur: 1.8, noise: 9, seed: 11 }, pick: 4, brand: 'lotus' },
+        { name: '竖立·更小', shelf: true, o: { scale: 0.75, seed: 13 }, pick: 7, brand: 'lotus' },
+        { name: '竖立·版式相同只是颜色不同', shelf: true, o: { order: ['red', 'pink', 'red', 'orange', 'red', 'gold', 'red', 'blue'], seed: 17 }, pick: 0, brand: 'red' },
         { name: '4×5 整齐', o: {} },
         { name: '混入外观相近的红色品牌', o: { other: [1, 5, 7, 12], otherBrand: 'fur' } },
         { name: '透视明显', o: { persp: 0.35, rows: 7, cols: 5, cw: 220, ch: 70, x0: 20, y0: 10 } },
         { name: '旋转±8°、错位、模糊', o: { rot: 8, jitter: 10, blur: 1.5, noise: 15 } },
-        { name: '部分调头摆放', o: { flip: [2, 3, 9] } },
+        { name: '部分调头摆放（勾选"有调头"）', o: { flip: [2, 3, 9] }, rotate: true },
         { name: '80 条小目标', o: { rows: 10, cols: 8, cw: 140, ch: 46, x0: 10, y0: 10, gap: 2 } },
         { name: '侧面窄条 12 层', o: { cw: 250, ch: 42, rows: 12, cols: 4, gap: 1, x0: 40, y0: 20 } }
       ];
@@ -299,28 +341,29 @@ module.exports = [
       const out = [];
       try {
         for (const c of configs) {
-          const pile = await S.pilePhoto('algo-' + out.length, c.o);
+          const pile = c.shelf ? await S.shelfPhoto('algo-' + out.length, c.o) : await S.pilePhoto('algo-' + out.length, c.o);
           const url = 'data:image/jpeg;base64,' + require('fs').readFileSync(pile.file).toString('base64');
-          const r = await page.evaluate(async ({ url, pile }) => {
+          const r = await page.evaluate(async ({ url, pile, c }) => {
             const img = new Image(); img.src = url; await img.decode();
             const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
-            const d = x.getImageData(0, 0, cv.width, cv.height).data; const g = new Float32Array(cv.width * cv.height);
-            for (let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+            const d = x.getImageData(0, 0, cv.width, cv.height).data; const n = cv.width * cv.height;
+            const g = new Float32Array(n), R = new Uint8ClampedArray(n), G = new Uint8ClampedArray(n), B = new Uint8ClampedArray(n);
+            for (let i = 0, j = 0; i < n; i++, j += 4) { R[i] = d[j]; G[i] = d[j + 1]; B[i] = d[j + 2]; g[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]; }
             const A = window.__EVIDENCE_APP__;
-            const pick = pile.boxes[0];
+            const pick = pile.boxes[c.pick || 0];
             const t0 = performance.now();
-            const cands = A.findSimilar(g, cv.width, cv.height, { x: pick.x + 3, y: pick.y + 3, w: pick.w - 6, h: pick.h - 6 }, {});
+            const cands = A.findSimilar(A.makeCountImage(g, R, G, B, cv.width, cv.height), { x: pick.x + 2, y: pick.y + 2, w: pick.w - 4, h: pick.h - 4 }, { rotate: !!c.rotate });
             const ms = performance.now() - t0;
             const thr = A.autoThreshold(cands);
             const acc = cands.filter(c => c.score >= thr);
             const truth = pile.boxes.filter(b => b.brand === pick.brand);
-            const hit = b => acc.some(c => Math.abs(c.x + c.w / 2 - (b.x + b.w / 2)) < b.w * 0.3 && Math.abs(c.y + c.h / 2 - (b.y + b.h / 2)) < b.h * 0.3);
+            const hit = b => acc.some(q => Math.abs(q.x + q.w / 2 - (b.x + b.w / 2)) < b.w * 0.3 && Math.abs(q.y + q.h / 2 - (b.y + b.h / 2)) < b.h * 0.3);
             return { truth: truth.length, found: acc.length, tp: truth.filter(hit).length, ms: Math.round(ms) };
-          }, { url, pile: { boxes: pile.boxes } });
+          }, { url, pile: { boxes: pile.boxes }, c });
           out.push(c.name + ' ' + r.found + '/' + r.truth + '（' + r.ms + 'ms）');
           assert(r.found === r.truth && r.tp === r.truth, c.name + '：应数出 ' + r.truth + '，实际 ' + r.found + '（命中 ' + r.tp + '）');
         }
-        return out.join('；') + '。仅为合成图测试，真实照片效果需现场验证';
+        return out.join('；') + '。均为合成图，真实照片效果需现场验证';
       } finally { await p.close(); }
     }
   },

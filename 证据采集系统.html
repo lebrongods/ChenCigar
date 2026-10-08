@@ -225,6 +225,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
 .cnt-top { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
 .cnt-top strong { flex: 1; min-width: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cnt-tip { padding: 8px 12px; font-size: 14px; line-height: 1.5; background: #26312d; }
+.cnt-warn { margin-top: 4px; color: #ffd27a; }
 .cnt-stage { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; background: #000; }
 .cnt-stage canvas { display: block; touch-action: pan-x pan-y; }
 .cnt-stage canvas.boxing { touch-action: none; cursor: crosshair; }
@@ -276,7 +277,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.4.0';
+  const APP_VERSION = '2.4.1';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -2351,7 +2352,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function countNoteText(parts, unit) {
     const sum = k => parts.reduce((a, p) => a + (Number(p[k]) || 0), 0);
     const total = sum('n');
-    const detail = '自动识别 ' + sum('auto') + '，人工补 ' + sum('added') + '，人工剔除 ' + sum('removed');
+    const detail = '自动识别 ' + sum('auto') + '，人工补 ' + sum('added') + '，人工剔除 ' + sum('removed') + (parts.some(p => p.region) ? '，限定了计数范围' : '');
     return '图片计数' + (parts.length > 1 ? ' ' + parts.length + ' 张照片 ' + parts.map(p => p.n).join(' + ') + ' =' : '') + ' ' + total + ' ' + (unit || '条') + '（' + detail + '）';
   }
   function renderSeizedModal(focus) {
@@ -2495,7 +2496,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const name = cig ? s.brand : itemName(s.kind, s.sub, s.spec);
     showBusy('正在保存计数照片…');
     let p; try { p = await processPhoto(res.file, { caseNumber: c.number, label: '涉案物品计数' + (name ? ' ' + name : ''), source: res.source }); } finally { hideBusy(); }
-    const part = { n: res.n, auto: res.auto, added: res.added, removed: res.removed, at: Date.now() };
+    const part = { n: res.n, auto: res.auto, added: res.added, removed: res.removed, region: !!res.region, at: Date.now() };
     const base = Number(s.qty) || 0;
     if (res.mode === 'add' && base > 0) { s.qty = String(Math.round((base + res.n) * 1000) / 1000); s.countParts = (s.countParts || []).concat(part); } else {
       s.qty = String(res.n); s.countParts = [part];
@@ -2698,7 +2699,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     let m = 0; for (let i = 0; i < t.length; i++) m += t[i]; m /= t.length;
     let n2 = 0; for (let i = 0; i < t.length; i++) { t[i] -= m; n2 += t[i] * t[i]; }
-    return { t, w: sw, h: sh, norm: Math.sqrt(n2) };
+    return { t, w: sw, h: sh, norm: Math.sqrt(n2), mean: m };
   }
   // 一个模板在整图上的 NCC 局部峰值（先隔 2 像素粗算，再在峰值附近逐像素细算）
   function nccPeaks(G, W, H, S1, S2, T, floor) {
@@ -2742,19 +2743,67 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const inter = ix * iy; if (!inter) return 0;
     return Math.max(inter / (a.w * a.h + b.w * b.h - inter), inter / Math.min(a.w * a.h, b.w * b.h) * 0.6);
   }
-  // gray：整张照片灰度（W×H）；box：框选的一条（同一坐标系）。返回按得分从高到低、已去除重叠的候选框
-  function findSimilar(gray, W, H, box, opts) {
+  // 计数用的图像：灰度 + 可选 RGB 三个通道（Float32Array，W×H）
+  function makeCountImage(gray, r, g, b, W, H) { return { gray, r, g, b, W, H }; }
+  // 把模板/候选区域分成若干格，比较每格的平均色度（r、g 色度坐标，与亮度无关），返回 0–1 的颜色相似度。
+  // 只比灰度时，白色条烟会和白柜子、塑料袋的边线"长得像"，不同颜色但版式相近的品牌也分不开。
+  function cellGrid(w, h) { return { gx: Math.max(1, Math.min(4, Math.round(w / 5))), gy: Math.max(1, Math.min(5, Math.round(h / 5))) }; }
+  function chroma(R, G, B) { const sum = R + G + B; return sum < 45 ? [1 / 3, 1 / 3, 0.3] : [R / sum, G / sum, Math.min(1, sum / 150)]; }
+  function templateCells(TC, w, h) {
+    const { gx, gy } = cellGrid(w, h); const out = [];
+    for (let j = 0; j < gy; j++) {
+      for (let i = 0; i < gx; i++) {
+        const x0 = Math.floor(i * w / gx), x1 = Math.floor((i + 1) * w / gx), y0 = Math.floor(j * h / gy), y1 = Math.floor((j + 1) * h / gy);
+        let R = 0, G = 0, B = 0, n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const k = y * w + x; R += TC[0].t[k] + TC[0].mean; G += TC[1].t[k] + TC[1].mean; B += TC[2].t[k] + TC[2].mean; n++; }
+        out.push(chroma(R / n, G / n, B / n));
+      }
+    }
+    return out;
+  }
+  function colorSimilarity(CI, W, px, py, w, h, cells) {
+    const { gx, gy } = cellGrid(w, h); const sum = (S, x0, y0, x1, y1) => S[y1 * (W + 1) + x1] - S[y0 * (W + 1) + x1] - S[y1 * (W + 1) + x0] + S[y0 * (W + 1) + x0];
+    let d = 0, wt = 0, k = 0;
+    for (let j = 0; j < gy; j++) {
+      for (let i = 0; i < gx; i++, k++) {
+        const x0 = px + Math.floor(i * w / gx), x1 = px + Math.floor((i + 1) * w / gx), y0 = py + Math.floor(j * h / gy), y1 = py + Math.floor((j + 1) * h / gy);
+        const n = Math.max(1, (x1 - x0) * (y1 - y0));
+        const c = chroma(sum(CI[0], x0, y0, x1, y1) / n, sum(CI[1], x0, y0, x1, y1) / n, sum(CI[2], x0, y0, x1, y1) / n), t = cells[k];
+        const q = Math.min(c[2], t[2]) + 0.15; // 暗格子的色度不可靠，权重低
+        d += Math.hypot(c[0] - t[0], c[1] - t[1]) * q; wt += q;
+      }
+    }
+    const md = d / wt;
+    return 1 / (1 + (md / 0.06) * (md / 0.06));
+  }
+  // img：makeCountImage 的结果；box：框选的一条（同一坐标系）。返回按得分从高到低、已去除重叠的候选框。
+  // 得分 = 灰度 NCC × 颜色相似度；明暗反差与框选那条相差太大（如白柜面、倒影）的直接排除
+  function findSimilar(img, box, opts) {
     opts = opts || {};
+    const W = img.W, H = img.H;
     let f = Math.sqrt(COUNT.area / Math.max(1, box.w * box.h));
     f = Math.min(1, Math.max(f, COUNT.minSide / Math.max(1, Math.min(box.w, box.h))));
-    const s = f < 1 ? shrinkGray(gray, W, H, f) : { g: gray, w: W, h: H };
+    const shrink = ch => (f < 1 ? shrinkGray(ch, W, H, f) : { g: ch, w: W, h: H });
+    const s = shrink(img.gray);
     const fx = s.w / W, fy = s.h / H;
     const S1 = integral(s.g, s.w, s.h, false), S2 = integral(s.g, s.w, s.h, true);
+    const col = img.r && img.g && img.b ? [img.r, img.g, img.b].map(c => shrink(c).g) : null;
+    const CI = col ? col.map(c => integral(c, s.w, s.h, false)) : null;
     const all = [];
     for (const k of COUNT.scales) {
-      for (const rot of opts.rotate ? [0, 90, 180, 270] : [0, 180]) {
-        const T = cutTemplate(s.g, s.w, s.h, box.x * fx, box.y * fy, box.w * fx, box.h * fy, k, rot);
-        nccPeaks(s.g, s.w, s.h, S1, S2, T, COUNT.floor).forEach(p => all.push({ x: p.x / fx, y: p.y / fy, w: p.w / fx, h: p.h / fy, score: Math.round(p.score * 1e4) / 1e4 }));
+      for (const rot of opts.rotate ? [0, 90, 180, 270] : [0]) {
+        const cut = g => cutTemplate(g, s.w, s.h, box.x * fx, box.y * fy, box.w * fx, box.h * fy, k, rot);
+        const T = cut(s.g);
+        const n = T.w * T.h, tStd = T.norm / Math.sqrt(n);
+        const cells = col ? templateCells(col.map(cut), T.w, T.h) : null;
+        nccPeaks(s.g, s.w, s.h, S1, S2, T, COUNT.floor).forEach(p => {
+          const a = p.y * (s.w + 1) + p.x, b = (p.y + p.h) * (s.w + 1) + p.x;
+          const s1 = S1[b + p.w] - S1[a + p.w] - S1[b] + S1[a], s2 = S2[b + p.w] - S2[a + p.w] - S2[b] + S2[a];
+          const ratio = Math.sqrt(Math.max(0, s2 - s1 * s1 / n) / n) / (tStd || 1);
+          if (ratio < 0.45 || ratio > 2.2) return;
+          const score = p.score * (cells ? colorSimilarity(CI, s.w, p.x, p.y, p.w, p.h, cells) : 1);
+          if (score >= COUNT.floor) all.push({ x: p.x / fx, y: p.y / fy, w: p.w / fx, h: p.h / fy, score: Math.round(score * 1e4) / 1e4 });
+        });
       }
     }
     all.sort((a, b) => b.score - a.score);
@@ -2788,19 +2837,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return out;
   }
 
-  const counter = { el: null, opts: null, img: null, W: 0, H: 0, gray: null, box: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null };
+  const counter = { el: null, opts: null, img: null, W: 0, H: 0, data: null, box: null, region: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null };
   // opts: { unit, brand, baseQty, source, onDone(result) }
   async function openCounter(file, opts) {
     closeCounter();
     showBusy('正在读取照片…');
-    let work, gray;
+    let work, data;
     try {
       const src = await loadImageFromFile(file);
       work = scaleToCanvas(src, COUNT.workMax);
       if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
       const d = work.getContext('2d').getImageData(0, 0, work.width, work.height).data;
-      gray = new Float32Array(work.width * work.height);
-      for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+      const n = work.width * work.height;
+      const gray = new Float32Array(n), r = new Uint8ClampedArray(n), g = new Uint8ClampedArray(n), b = new Uint8ClampedArray(n);
+      for (let i = 0, j = 0; i < n; i++, j += 4) { r[i] = d[j]; g[i] = d[j + 1]; b[i] = d[j + 2]; gray[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]; }
+      data = makeCountImage(gray, r, g, b, work.width, work.height);
     } finally { hideBusy(); }
     const el = document.createElement('div');
     el.className = 'overlay counter'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', '图片计数');
@@ -2809,7 +2860,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       '<div class="cnt-tip"></div><div class="cnt-stage"><canvas></canvas></div><div class="cnt-panel"></div>';
     $('#toast-root').innerHTML = '';
     document.body.appendChild(el); document.body.classList.add('overlay-open');
-    Object.assign(counter, { el, opts, img: work, W: work.width, H: work.height, gray, box: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null });
+    Object.assign(counter, { el, opts, img: work, W: work.width, H: work.height, data, box: null, region: null, cands: [], thr: COUNT.defThr, removed: [], added: [], mode: 'box', zoom: 1, rotate: false, drag: null });
     el.addEventListener('click', onCounterClick);
     el.addEventListener('input', onCounterInput);
     el.addEventListener('change', onCounterInput);
@@ -2823,39 +2874,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function closeCounter() {
     if (!counter.el) return;
     counter.el.remove();
-    Object.assign(counter, { el: null, opts: null, img: null, gray: null, cands: [], removed: [], added: [], drag: null });
+    Object.assign(counter, { el: null, opts: null, img: null, data: null, region: null, cands: [], removed: [], added: [], drag: null });
     if (!scanner.el) document.body.classList.remove('overlay-open');
   }
   function counterTpl() { const b = counter.box; return b ? { w: b.w, h: b.h } : { w: 40, h: 20 }; }
   function counterMarks() {
     const inside = (p, b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
-    const kept = [], removed = [];
-    counter.cands.filter(c => c.score >= counter.thr).forEach(b => (counter.removed.some(p => inside(p, b)) ? removed : kept).push(b));
+    const kept = [], removed = []; const R = counter.region;
+    // 限定了范围时，中心在范围外的不计数
+    const inRegion = b => !R || inside({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, R);
+    counter.cands.filter(c => c.score >= counter.thr && inRegion(c)).forEach(b => (counter.removed.some(p => inside(p, b)) ? removed : kept).push(b));
     const t = counterTpl();
     const added = counter.added.map(p => ({ x: p.x - t.w / 2, y: p.y - t.h / 2, w: t.w, h: t.h, added: true, p }));
     const all = numberMarks(kept.concat(added));
     return { kept, removed, added, all };
   }
   function counterResultText(m) {
-    return '自动识别 ' + (m.kept.length + m.removed.length) + (m.added.length ? '，人工补 ' + m.added.length : '') + (m.removed.length ? '，人工剔除 ' + m.removed.length : '');
+    return (counter.region ? '限定范围内' : '') + '自动识别 ' + (m.kept.length + m.removed.length) + (m.added.length ? '，人工补 ' + m.added.length : '') + (m.removed.length ? '，人工剔除 ' + m.removed.length : '');
   }
   function renderCounter() {
     const el = counter.el; if (!el) return;
     const unit = counter.opts.unit || '条';
+    const small = counter.box && counter.box.w * counter.box.h < counter.W * counter.H * 0.004;
     el.querySelector('.cnt-tip').innerHTML = counter.mode === 'box'
-      ? '<strong>第 1 步：</strong>用手指在照片上<strong>框住其中一条</strong>（框紧，包含商标图案）'
-      : '<strong>第 2 步：</strong>逐个核对编号。点标记可剔除，点漏数的' + esc(unit) + '可补上';
+      ? '<strong>第 1 步：</strong>用手指在照片上<strong>框住其中一' + esc(unit) + '</strong>（框紧，包含商标图案）'
+      : counter.mode === 'region' ? '用手指<strong>框出要数的范围</strong>（这一堆），范围外的不计数'
+        : '<strong>第 2 步：</strong>逐个核对编号。点标记可剔除，点漏数的' + esc(unit) + '可补上；背景里误标的多，可点"限定范围"' +
+          (small ? '<div class="cnt-warn">框选的这' + esc(unit) + '在照片里太小，容易数错。建议走近重拍，让要数的物品占满画面。</div>' : '');
     el.querySelector('[data-ct=zoom]').textContent = counter.zoom === 1 ? '放大' : counter.zoom + '×';
     const panel = el.querySelector('.cnt-panel');
     if (counter.mode === 'box') {
-      panel.innerHTML = '<div class="small muted">照片要拍全、拍正，尽量让每' + esc(unit) + '露出同一面；被遮挡、叠压的数不出来，需要人工补上。</div>' +
+      panel.innerHTML = '<div class="small muted">拍照时走近、正对，让要数的' + esc(unit) + '占满画面，并露出同一面；被遮挡、叠压的数不出来，需要人工补上。</div>' +
         '<div class="btn-row"><button type="button" class="btn" data-ct="close">取消</button></div>';
+    } else if (counter.mode === 'region') {
+      panel.innerHTML = '<div class="small muted">框出范围后，范围外的标记不计数（不算人工剔除）。</div>' +
+        '<div class="btn-row"><button type="button" class="btn" data-ct="region-cancel">返回</button></div>';
     } else {
       const m = counterMarks(); const n = m.all.length; const base = Number(counter.opts.baseQty) || 0;
       panel.innerHTML = '<div class="cnt-count"><span class="cnt-n">' + n + '</span> ' + esc(unit) + '<span class="small muted">（' + counterResultText(m) + '）</span></div>' +
         '<label class="cnt-thr"><span class="small">宽松</span><input type="range" min="0.35" max="0.95" step="0.01" value="' + counter.thr + '" data-ct="thr" aria-label="识别严格程度"><span class="small">严格</span></label>' +
-        '<label class="check small"><input type="checkbox" data-ct="rotate"' + (counter.rotate ? ' checked' : '') + '>有横放、竖放方向不一致的</label>' +
+        '<label class="check small"><input type="checkbox" data-ct="rotate"' + (counter.rotate ? ' checked' : '') + '>有调头摆放或横放、竖放混在一起的</label>' +
         '<div class="btn-row"><button type="button" class="btn" data-ct="rebox">重新框选</button>' +
+        (counter.region ? '<button type="button" class="btn" data-ct="region-clear">取消范围</button>' : '<button type="button" class="btn" data-ct="region">限定范围</button>') + '</div><div class="btn-row">' +
         (base > 0 ? '<button type="button" class="btn" data-ct="done" data-mode="replace"' + (n ? '' : ' disabled') + '>填入 ' + n + '</button><button type="button" class="btn btn-primary" data-ct="done" data-mode="add"' + (n ? '' : ' disabled') + '>累加为 ' + (Math.round((base + n) * 1000) / 1000) + '</button>'
           : '<button type="button" class="btn btn-primary" data-ct="done" data-mode="replace"' + (n ? '' : ' disabled') + '>确认 ' + n + ' ' + esc(unit) + '</button>') + '</div>';
     }
@@ -2868,7 +2928,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.style.width = cssW + 'px'; cv.style.height = cssH + 'px';
     cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
-    cv.classList.toggle('boxing', counter.mode === 'box');
+    cv.classList.toggle('boxing', counter.mode === 'box' || counter.mode === 'region');
     const x = cv.getContext('2d'); const k = cv.width / counter.W;
     x.drawImage(counter.img, 0, 0, cv.width, cv.height);
     const rect = (b, color, lw, dash) => { x.save(); x.strokeStyle = color; x.lineWidth = lw * dpr; if (dash) x.setLineDash([6 * dpr, 4 * dpr]); x.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k); x.restore(); };
@@ -2876,9 +2936,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (counter.drag && counter.drag.box) rect(counter.drag.box, '#2f80ed', 2.5, true);
       return;
     }
+    const R = counter.mode === 'region' ? counter.drag && counter.drag.box : counter.region;
+    if (R) drawRegion(x, R, k, dpr, cv.width, cv.height);
+    if (counter.mode === 'region') return;
     const m = counterMarks();
     if (counter.box) rect(counter.box, '#2f80ed', 2.5, true);
     drawMarks(x, m, k, dpr);
+  }
+  // 计数范围：范围外压暗，范围用黄色虚线框出
+  function drawRegion(x, R, k, u, cw, ch) {
+    x.save(); x.fillStyle = 'rgba(0,0,0,.45)';
+    x.fillRect(0, 0, cw, R.y * k); x.fillRect(0, (R.y + R.h) * k, cw, ch - (R.y + R.h) * k);
+    x.fillRect(0, R.y * k, R.x * k, R.h * k); x.fillRect((R.x + R.w) * k, R.y * k, cw - (R.x + R.w) * k, R.h * k);
+    x.strokeStyle = '#ffd400'; x.lineWidth = 2.5 * u; x.setLineDash([8 * u, 5 * u]); x.strokeRect(R.x * k, R.y * k, R.w * k, R.h * k);
+    x.restore();
   }
   // 在画布上画编号标记；k 为照片坐标到画布像素的比例，u 为线宽/字号单位
   function drawMarks(x, m, k, u) {
@@ -2903,7 +2974,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return { x: (ev.clientX - r.left) / r.width * counter.W, y: (ev.clientY - r.top) / r.height * counter.H };
   }
   function onCounterPointer(ev) {
-    if (!counter.el || counter.mode !== 'box') return;
+    if (!counter.el || (counter.mode !== 'box' && counter.mode !== 'region')) return;
     const cv = ev.currentTarget; const p = counterPoint(ev);
     if (ev.type === 'pointerdown') { ev.preventDefault(); try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ } counter.drag = { x0: p.x, y0: p.y, box: null }; return; }
     if (!counter.drag) return;
@@ -2913,7 +2984,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     d.box = box;
     if (ev.type === 'pointermove') { drawCounter(); return; }
     counter.drag = null;
+    counter.swallow = Date.now(); // 松手后浏览器可能紧接着补发一次点击，不能当作"补一个"
+
     if (ev.type === 'pointercancel') { drawCounter(); return; }
+    if (counter.mode === 'region') {
+      if (box.w < counter.W / 20 || box.h < counter.H / 20) { drawCounter(); toast('范围太小了，请框出整堆', 'warn'); return; }
+      Object.assign(counter, { region: box, mode: 'check' }); renderCounter(); return;
+    }
     const minSide = Math.max(8, counter.W / 200);
     if (box.w < minSide || box.h < minSide) { drawCounter(); toast('框得太小了，请框住整条', 'warn'); return; }
     if (box.w * box.h > counter.W * counter.H * 0.5) { drawCounter(); toast('框得太大了，只框其中一条', 'warn'); return; }
@@ -2925,7 +3002,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     showBusy('正在查找相同的物品…');
     await new Promise(r => setTimeout(r, 30)); // 先让提示显示出来
     let cands;
-    try { cands = findSimilar(counter.gray, counter.W, counter.H, counter.box, { rotate: counter.rotate }); } finally { hideBusy(); }
+    try { cands = findSimilar(counter.data, counter.box, { rotate: counter.rotate }); } finally { hideBusy(); }
     if (!counter.el) return;
     if (!cands.length) { counter.box = null; drawCounter(); toast('框选的区域没有明显图案，请框住整条（包含商标图案）后重试', 'warn', 4000); return; }
     Object.assign(counter, { cands, thr: autoThreshold(cands), removed: [], added: [], mode: 'check' });
@@ -2943,11 +3020,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const a = b.dataset.ct;
       if (a === 'close') { closeCounter(); return; }
       if (a === 'zoom') { counter.zoom = counter.zoom >= 3 ? 1 : counter.zoom + 1; renderCounter(); return; }
-      if (a === 'rebox') { Object.assign(counter, { mode: 'box', box: null, cands: [], removed: [], added: [] }); renderCounter(); return; }
+      if (a === 'rebox') { Object.assign(counter, { mode: 'box', box: null, region: null, cands: [], removed: [], added: [] }); renderCounter(); return; }
+      if (a === 'region') { counter.mode = 'region'; counter.zoom = 1; renderCounter(); return; }
+      if (a === 'region-cancel') { counter.mode = 'check'; renderCounter(); return; }
+      if (a === 'region-clear') { counter.region = null; renderCounter(); return; }
       if (a === 'done') { run(() => finishCounter(b.dataset.mode)); return; }
       return;
     }
-    if (ev.target.tagName !== 'CANVAS' || counter.mode !== 'check') return;
+    if (ev.target.tagName !== 'CANVAS') return;
+    const swallow = counter.swallow && Date.now() - counter.swallow < 400; counter.swallow = 0;
+    if (swallow || counter.mode !== 'check') return;
     // 核对：点已计数的标记 → 剔除；点已剔除的 → 恢复；点人工补的 → 撤销；点空白处 → 补一个
     const p = counterPoint(ev); const m = counterMarks(); const t = counterTpl();
     const inside = bx => p.x >= bx.x && p.x <= bx.x + bx.w && p.y >= bx.y && p.y <= bx.y + bx.h;
@@ -2969,6 +3051,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const cv = document.createElement('canvas'); cv.width = counter.W; cv.height = counter.H;
     const x = cv.getContext('2d'); x.drawImage(counter.img, 0, 0);
     const u = Math.max(1, Math.min(counter.W, counter.H) / 700);
+    if (counter.region) { const R = counter.region; x.save(); x.strokeStyle = '#ffd400'; x.lineWidth = 3 * u; x.setLineDash([10 * u, 6 * u]); x.strokeRect(R.x, R.y, R.w, R.h); x.restore(); }
     drawMarks(x, m, 1, u);
     const fs = Math.round(Math.max(16, Math.min(counter.W, counter.H) * 0.032));
     const text = '图片计数：' + n + ' ' + unit + '（' + counterResultText(m) + '）' + (opts.brand ? '　' + opts.brand : '');
@@ -2977,7 +3060,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     x.fillText(text, Math.round(fs * 0.6), Math.round(fs * 0.95), counter.W - fs * 1.2);
     const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
     const file = new File([blob], 'count.jpg', { type: 'image/jpeg', lastModified: Date.now() });
-    const result = { n, auto: m.kept.length + m.removed.length, added: m.added.length, removed: m.removed.length, mode: mode === 'add' ? 'add' : 'replace', file, source: opts.source };
+    const result = { n, region: !!counter.region, auto: m.kept.length + m.removed.length, added: m.added.length, removed: m.removed.length, mode: mode === 'add' ? 'add' : 'replace', file, source: opts.source };
     closeCounter();
     if (opts.onDone) await opts.onDone(result);
   }
@@ -4384,7 +4467,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // 供自动化测试读取的只读接口
   window.__EVIDENCE_APP__ = {
     version: APP_VERSION,
-    analyzeImageData, checkGtin, seizedItemValid, findSimilar, autoThreshold, numberMarks, safeName, parseIdNo, recordModel, modelDocx, modelHtml, itemsSummaryText,
+    analyzeImageData, checkGtin, seizedItemValid, findSimilar, makeCountImage, autoThreshold, numberMarks, safeName, parseIdNo, recordModel, modelDocx, modelHtml, itemsSummaryText,
     get backend() { return Store.backend; },
     get idle() { return running === 0; },
     get state() { return { view: state.view, user: state.user && { id: state.user.id, name: state.user.name, role: state.user.role }, caseId: state.caseId, recordId: state.recordId }; }

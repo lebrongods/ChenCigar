@@ -137,4 +137,59 @@ async function pilePhoto(name, o = {}) {
   return { file, boxes: r.boxes, W: r.W, H: r.H };
 }
 
-module.exports = { barcodePhoto, fakeCameraScript, pilePhoto };
+// 仿真实拍摄的难例：条烟竖立在白色亮面柜子上（只露出窄端面）、多个品牌混放、目标小、
+// 背景有塑料袋、柜子边线，柜面有倒影。返回 { file, boxes（全部条烟）, W, H }，target 品牌为 'lotus'
+async function shelfPhoto(name, o = {}) {
+  const b = await L.getBrowser(); const page = await b.newPage();
+  const r = await page.evaluate(o => {
+    o = Object.assign({ W: 1600, H: 1200, scale: 1, seed: 7, reflect: 0.22, blur: 1, noise: 6, q: 0.85,
+      order: ['pink', 'lotus', 'orange', 'red', 'lotus', 'gold', 'blue', 'lotus', 'green', 'pink'] }, o);
+    let s = o.seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const W = o.W, H = o.H;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    // 墙、柜面、柜门、地面
+    let g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#e4e4e0'); g.addColorStop(1, '#c9c9c4'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const top = Math.round(H * 0.47), front = Math.round(H * 0.52), bottom = Math.round(H * 0.78);
+    x.fillStyle = '#d6d1c8'; x.fillRect(0, top, W, front - top);
+    g = x.createLinearGradient(0, front, 0, bottom); g.addColorStop(0, '#e3dfd7'); g.addColorStop(1, '#cfcac1'); x.fillStyle = g; x.fillRect(0, front, W, bottom - front);
+    x.fillStyle = '#9a958d'; x.fillRect(0, front - 2, W, 3); x.fillRect(W * 0.5, front, 3, bottom - front); x.fillRect(W * 0.04, front, 2, bottom - front); x.fillRect(W * 0.96, front, 2, bottom - front);
+    x.fillStyle = '#bdb8af'; x.fillRect(0, front + (bottom - front) * 0.12, W, 2);
+    x.fillStyle = '#8f8a83'; x.fillRect(0, bottom, W, H - bottom);
+    for (let i = 0; i < 6; i++) { x.fillStyle = '#7d7871'; x.fillRect(0, bottom + i * 50, W, 1); }
+    // 塑料袋（左侧，半透明褶皱）
+    for (let i = 0; i < 70; i++) { x.strokeStyle = 'rgba(' + (rnd() > 0.4 ? '255,255,255' : '120,120,120') + ',' + (0.15 + rnd() * 0.35) + ')'; x.lineWidth = 2 + rnd() * 8; x.beginPath(); const sx = W * 0.02 + rnd() * W * 0.18, sy = top - 160 + rnd() * 200; x.moveTo(sx, sy); x.quadraticCurveTo(sx + rnd() * 120 - 40, sy + rnd() * 80 - 40, sx + rnd() * 160 - 60, sy + rnd() * 120 - 30); x.stroke(); }
+    const colors = { pink: ['#e88fb0', '#fff', '#b03060'], orange: ['#f08a24', '#fff3d6', '#7a3c00'], red: ['#c4161c', '#f5d36b', '#fff'], gold: ['#d9b44a', '#5a3b00', '#fff'], blue: ['#2a5caa', '#fff', '#dfe8f5'], green: ['#2f8a4c', '#fff', '#e9d36b'] };
+    function face(c, brand, w, h) {
+      if (brand === 'lotus') { // 白底、绿色横带、粉色荷花、竖排小字
+        c.fillStyle = '#f4f4ef'; c.fillRect(0, 0, w, h);
+        c.fillStyle = '#1f8a5a'; c.fillRect(0, h * 0.62, w, h * 0.1); c.fillRect(0, h * 0.9, w, h * 0.05);
+        c.fillStyle = '#e46a9a'; c.beginPath(); c.arc(w * 0.5, h * 0.3, w * 0.26, 0, 7); c.fill();
+        c.fillStyle = '#1f8a5a'; for (let i = 0; i < 4; i++) c.fillRect(w * 0.42, h * (0.4 + i * 0.045), w * 0.16, h * 0.025);
+      } else {
+        const k = colors[brand]; c.fillStyle = k[0]; c.fillRect(0, 0, w, h);
+        c.fillStyle = k[1]; c.fillRect(w * 0.15, h * 0.18, w * 0.7, h * 0.3);
+        c.fillStyle = k[2]; c.fillRect(w * 0.3, h * 0.6, w * 0.4, h * 0.22);
+      }
+      c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 1; c.strokeRect(0.5, 0.5, w - 1, h - 1);
+    }
+    const boxes = [];
+    const fw = 40 * o.scale, fh = 150 * o.scale; let cx = W * 0.36;
+    const items = o.order.map((brand, i) => { const it = { brand, x: cx + (rnd() - 0.5) * 4, y: top + 30 - fh - (i % 3 === 1 ? 14 : 0) + (rnd() - 0.5) * 4, w: fw * (0.96 + rnd() * 0.08), h: fh }; cx += fw + 2 + rnd() * 4; return it; });
+    // 倒影（柜面亮，倒影淡而模糊）
+    const rc = document.createElement('canvas'); rc.width = W; rc.height = H; const rx = rc.getContext('2d');
+    items.forEach(it => { rx.save(); rx.translate(it.x, 2 * (top + 30) - it.y); rx.scale(1, -1); face(rx, it.brand, it.w, it.h); rx.restore(); });
+    x.save(); x.globalAlpha = o.reflect; x.filter = 'blur(2px)'; x.drawImage(rc, 0, 0); x.restore();
+    items.forEach(it => { x.save(); x.translate(it.x, it.y); face(x, it.brand, it.w, it.h); x.restore(); boxes.push({ x: it.x, y: it.y, w: it.w, h: it.h, brand: it.brand }); });
+    // 窗光
+    g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, 'rgba(255,255,250,.18)'); g.addColorStop(1, 'rgba(0,0,0,.18)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const c2 = document.createElement('canvas'); c2.width = W; c2.height = H; const y = c2.getContext('2d'); y.filter = 'blur(' + o.blur + 'px)'; y.drawImage(cv, 0, 0);
+    const d = y.getImageData(0, 0, W, H); for (let i = 0; i < d.data.length; i += 4) { const n = (rnd() - 0.5) * 2 * o.noise; d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n; } y.putImageData(d, 0, 0);
+    return { url: c2.toDataURL('image/jpeg', o.q), boxes, W, H };
+  }, o);
+  await page.close();
+  const file = path.join(L.TMP, name + '.jpg');
+  fs.writeFileSync(file, Buffer.from(r.url.split(',')[1], 'base64'));
+  return { file, boxes: r.boxes, W: r.W, H: r.H };
+}
+
+module.exports = { barcodePhoto, fakeCameraScript, pilePhoto, shelfPhoto };
