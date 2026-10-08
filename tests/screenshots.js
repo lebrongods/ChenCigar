@@ -2,19 +2,21 @@
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
+const S = require('./synth');
 
 (async () => {
   await L.makeImages();
   const out = path.join(L.ROOT, 'screenshots');
   fs.mkdirSync(out, { recursive: true });
   const w = L.createWorld();
-  const ctxOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 };
+  // 模拟摄像头画面（条烟侧面的条码），用于实时扫码截图
+  const ctxOpts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, initScript: S.fakeCameraScript('6901028075015') };
   const p = await L.openPage(w, ctxOpts);
   const page = p.page;
   const shot = async (name, full) => { await page.waitForTimeout(250); await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove())); await page.screenshot({ path: path.join(out, name + '.png'), fullPage: !!full }); console.log('截图', name); };
 
   await L.setupAdmin(page, '王管理');
-  await L.addUser(page, '李稽查', 'inspector', '1111');
+  await L.addUser(page, '李稽查', 'inspector', '1111', '示例0002');
   await L.addUser(page, '赵稽查', 'inspector', '2222');
   await page.click('[data-action=goto][data-view=users]');
   await shot('01-用户管理');
@@ -38,16 +40,103 @@ const L = require('./lib');
 
   await L.captureAllRequired(page);
   await L.addSeized(page, { barcode: '118187', qty: 29 });
+  // 实时扫码 → 图片计数（20 条中华 + 4 条其他品牌的合成照片）
+  const pile = await S.pilePhoto('shot-pile', { rows: 6, cols: 4, other: [1, 5, 7, 12], y0: 40 });
   await page.click('[data-action=seized-add]');
-  await page.fill('form[data-form=seized] [name=barcode]', '075015');
-  await page.fill('form[data-form=seized] [name=qty]', '20');
+  await page.evaluate(() => { window.__zxDecode = window.ZXingLite.decode; window.ZXingLite.decode = () => null; }); // 先暂停识别以便截图
+  await page.click('[data-action=scan-barcode]');
+  await page.waitForFunction(() => document.querySelector('.scanner video') && document.querySelector('.scanner video').readyState >= 2);
+  await shot('22-实时扫码');
+  await page.evaluate(() => { window.ZXingLite.decode = window.__zxDecode; });
+  await page.waitForSelector('.scanner', { state: 'detached', timeout: 15000 });
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-action=count-photo][data-src=camera]')]);
+  await fc.setFiles(pile.file);
+  await page.waitForSelector('.counter canvas.boxing');
+  const r = await page.$eval('.counter canvas', c => { const x = c.getBoundingClientRect(); return { left: x.left, top: x.top, width: x.width, height: x.height }; });
+  const b0 = pile.boxes[0]; const pt = q => [r.left + q.x / pile.W * r.width, r.top + q.y / pile.H * r.height];
+  await page.mouse.move(...pt({ x: b0.x + 3, y: b0.y + 3 })); await page.mouse.down();
+  await page.mouse.move(...pt({ x: b0.x + b0.w - 3, y: b0.y + b0.h - 3 }), { steps: 6 }); await page.mouse.up();
+  await page.waitForSelector('.cnt-n', { timeout: 20000 });
+  await shot('23-图片计数（核对）');
+  await page.click('.counter [data-ct=done]');
+  await page.waitForFunction(() => document.querySelector('form[data-form=seized] [name=qty]') && document.querySelector('form[data-form=seized] [name=qty]').value === '20');
   await page.evaluate(() => document.activeElement.blur());
-  await shot('05-查获卷烟登记');
+  await shot('05-涉案物品录入（卷烟）');
+  // 扫码录入的条目"保存并继续"会自动打开摄像头扫下一个品规；这里关掉，改录烟叶
+  await page.evaluate(() => { window.ZXingLite.decode = () => null; });
+  await page.click('[data-action=seized-save-next]');
+  await page.waitForSelector('.scanner video');
+  await page.click('.scanner [data-sc=close]');
+  await page.evaluate(() => { window.ZXingLite.decode = window.__zxDecode; });
+  await page.waitForFunction(() => window.__EVIDENCE_APP__.idle && document.querySelector('form[data-form=seized] [name=barcode]') && document.querySelector('form[data-form=seized] [name=barcode]').value === '');
+  await page.click('.kind-tabs .btn:has-text("烟叶")');
+  await page.fill('form[data-form=seized] [name=qty]', '30');
+  await page.evaluate(() => document.activeElement.blur());
+  await shot('12-涉案物品录入（烟叶）');
+  await page.click('[data-action=seized-save-next]');
+  await page.waitForFunction(() => window.__EVIDENCE_APP__.idle && document.querySelector('form[data-form=seized] [name=qty]').value === '');
+  await page.click('.kind-tabs .btn:has-text("电子烟")');
+  await page.fill('form[data-form=seized] [name=qty]', '10');
+  await page.fill('form[data-form=seized] [name=price]', '30');
+  await page.evaluate(() => document.activeElement.blur());
+  await shot('13-涉案物品录入（电子烟）');
   await page.click('form[data-form=seized] [type=submit]');
   await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
   await page.evaluate(() => document.querySelector('#seized-list').scrollIntoView({ block: 'center' }));
-  await shot('09-查获卷烟与涉案金额');
-  await L.packageCase(page);
+  await shot('09-涉案物品与涉案金额');
+
+  // 现场笔录
+  await page.click('[data-action=rec-new][data-type=scene]');
+  await page.waitForSelector('.rec-editor');
+  await page.click('[data-action=rec-officer]:has-text("李稽查")');
+  const chip = (rf, v) => page.click('[data-action=rf-chip][data-rf="' + rf + '"][data-v="' + v + '"]');
+  await chip('facts.vehicleType', '小型轿车');
+  await page.fill('[data-rf="facts.plate"]', '湘L示例01');
+  await page.fill('[data-rf="facts.driver"]', '张某');
+  await chip('facts.location', '后备箱');
+  await chip('facts.permit', '未能出示烟草专卖品准运证');
+  await chip('facts.docs', '无随车单据');
+  await page.click('[data-action=scene-draft]');
+  await page.click('[data-action=rec-set-text][data-v="以上情况属实"]');
+  await page.click('[data-action=rec-now]');
+  await page.evaluate(() => document.querySelector('[data-rf="facts.vehicleType"]').closest('details').scrollIntoView());
+  await shot('15-现场笔录（检查要素）');
+  await page.evaluate(() => document.querySelector('.body-text').scrollIntoView({ block: 'center' }));
+  await shot('16-现场笔录（自动生成正文）');
+  await page.click('[data-action=back]');
+
+  // 询问笔录
+  await page.click('[data-action=rec-new][data-type=inquiry]');
+  await page.waitForSelector('.rec-editor');
+  await page.click('[data-action=rec-officer]:has-text("李稽查")');
+  await page.fill('[data-rf="recorder"]', '李稽查');
+  await page.fill('[data-rf="subject.idNo"]', '43000019850306123X'.slice(0, 17) + (() => { const b = '43000019850306123'; const w = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]; let t = 0; for (let i = 0; i < 17; i++) t += +b[i] * w[i]; return '10X98765432'[t % 11]; })());
+  await page.fill('[data-rf="subject.address"]', '示例县示例村');
+  await page.fill('[data-rf="subject.phone"]', '138xxxx0000');
+  const card = i => page.locator('.qa-card').nth(i);
+  await card(0).locator('[data-action=qa-hint]').click();
+  await card(1).locator('[data-action=qa-hint]').click();
+  await card(2).locator('[data-action=qa-hint]').click();
+  await card(3).locator('[data-action=qa-hint]').click();
+  await card(4).locator('textarea[data-qf=a]').fill('从示例市出发，准备开往示例县城。');
+  await card(5).locator('[data-action=qa-hint] >> nth=0').click();
+  await card(6).locator('[data-action=qa-hint]').click();
+  await card(9).locator('[data-action=qa-hint]').click();
+  await page.click('[data-action=rec-now]');
+  await page.waitForFunction(() => window.__EVIDENCE_APP__.idle);
+  await shot('14-询问笔录（基本信息）');
+  await page.evaluate(() => document.querySelectorAll('.qa-card')[5].scrollIntoView());
+  await shot('17-询问笔录（问答）');
+  await page.click('[data-action=rec-preview]');
+  await page.waitForSelector('.doc-page');
+  await page.evaluate(() => document.querySelectorAll('.doc-qa')[2].scrollIntoView({ block: 'center' }));
+  await shot('18-笔录预览');
+  await page.click('.modal [data-action=modal-close]');
+  await page.click('[data-action=back]');
+  await page.evaluate(() => document.querySelector('#records-card').scrollIntoView({ block: 'center' }));
+  await shot('19-案件页笔录区');
+  const pkg = await L.packageCase(page);
+  fs.writeFileSync(path.join(out, '..', 'tests', '.last-sample-package'), pkg.zip);
   await shot('06-证据包生成完成');
   await page.click('[data-action=assign-case]');
   const uid = JSON.parse(w.shared.get('users')).find(u => u.name === '李稽查').id;

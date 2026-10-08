@@ -17,7 +17,7 @@ async function packBlockedText(page) {
 
 module.exports = [
   {
-    name: '查获卷烟：品规为空 / 数量为 0 均拦截打包；补全后可打包',
+    name: '涉案物品（卷烟）：品规为空 / 数量为 0 均拦截打包；补全后可打包',
     fn: async () => {
       const w = L.createWorld(); const p = await readyCase(w); const page = p.page;
       try {
@@ -44,7 +44,7 @@ module.exports = [
     }
   },
   {
-    name: '查获卷烟：目录外条码手工录入品规和单价；校验位错误提示；自动记入本地条码库，下次输后 6 位带出',
+    name: '涉案物品（卷烟）：目录外条码手工录入品规和单价；校验位错误提示；自动记入本地条码库，下次输后 6 位带出',
     fn: async () => {
       const w = L.createWorld(); const p = await readyCase(w); const page = p.page;
       try {
@@ -72,31 +72,12 @@ module.exports = [
     }
   },
   {
-    name: '条码：浏览器无 BarcodeDetector 时点"扫码"不崩溃，提示手工输入',
-    fn: async () => {
-      const w = L.createWorld(); const p = await readyCase(w, { initScript: () => { delete window.BarcodeDetector; } }); const page = p.page;
-      try {
-        assert(!(await page.evaluate(() => 'BarcodeDetector' in window)), '测试前提：无 BarcodeDetector');
-        await page.click('[data-action=seized-add]');
-        await page.click('[data-action=scan-barcode]');
-        await page.waitForSelector('#barcode-msg:has-text("不支持条码自动识别")');
-        await page.fill('form[data-form=seized] [name=barcode]', '6901028888882');
-        await page.fill('form[data-form=seized] [name=brand]', '手工品规');
-        await page.fill('form[data-form=seized] [name=qty]', '1');
-        await page.click('form[data-form=seized] [type=submit]');
-        await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
-        assert((await page.textContent('#seized-list')).includes('6901028888882'), '手工输入的条码应保存');
-        assert(p.errors.length === 0, '控制台不应有错误：' + p.errors.join(';'));
-        return '';
-      } finally { await p.close(); }
-    }
-  },
-  {
-    name: '条码：BarcodeDetector 可用时（测试桩）扫码填入条码，并把该照片作为品规照片',
+    name: '条码：拍照识别时 BarcodeDetector 可用（测试桩）则用它识别，填入条码，并把该照片作为品规照片',
     fn: async () => {
       const w = L.createWorld();
       const stub = () => {
         window.BarcodeDetector = class { constructor(o) { this.o = o; } static async getSupportedFormats() { return ['ean_13', 'code_128']; } async detect() { return [{ rawValue: '6901028075015', format: 'ean_13' }]; } };
+        Object.defineProperty(Navigator.prototype, 'mediaDevices', { get: () => undefined, configurable: true }); // 不能直接用摄像头 → 拍照识别
       };
       const p = await readyCase(w, { initScript: stub }); const page = p.page;
       try {
@@ -113,7 +94,7 @@ module.exports = [
         await page.waitForSelector('form[data-form=seized]', { state: 'detached' });
         const { zip } = await L.packageCase(page);
         const u = Z.unzip(zip);
-        assert(u.files.includes('S-001_查获卷烟_1_中华（硬）.jpg'), '证据包应含查获卷烟照片：' + u.files.join(','));
+        assert(u.files.includes('S-001_涉案物品_1_中华（硬）.jpg'), '证据包应含涉案物品照片：' + u.files.join(','));
         return '仅验证识别结果的处理流程；真机识别率未测';
       } finally { await p.close(); }
     }
