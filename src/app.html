@@ -260,7 +260,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.4.2';
+  const APP_VERSION = '2.4.3';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -384,7 +384,11 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       },
       async del(key, shared) {
         try {
-          if (backend === 'host') { if (window.storage.delete) await window.storage.delete(key, shared); return true; }
+          if (backend === 'host') {
+            if (!window.storage.delete) return false;
+            const r = await window.storage.delete(key, shared);
+            return !(r === false || r === null || (r && r.deleted === false));
+          }
           if (backend === 'indexeddb') { await idb('readwrite', s => s.delete(full(key, shared))); return true; }
           mem.delete(full(key, shared));
           return true;
@@ -423,6 +427,18 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     b.querySelector('.msg').textContent = '保存失败：' + describeKey(key) + '未能写入存储，刚才的修改可能没有保存。请检查手机存储空间后重试，并尽快由管理员导出备份。';
     b.hidden = false;
     toast('保存失败：' + describeKey(key) + '未写入存储', 'error', 6000);
+  }
+  function reportDeleteFail(key) {
+    const b = $('#save-banner');
+    b.querySelector('.msg').textContent = '删除失败：' + describeKey(key) + '未能从存储中删除，可能残留在本机/共享存储中。请检查存储后重试，或联系管理员。';
+    b.hidden = false;
+    toast('删除失败：' + describeKey(key) + '未能从存储中删除', 'error', 6000);
+  }
+  // 删除存储数据并检查结果；失败时显示红色横幅，返回 false
+  async function delData(key, shared) {
+    const ok = await Store.del(key, shared === undefined ? true : shared);
+    if (!ok) reportDeleteFail(key);
+    return ok;
   }
   async function getJSON(key, shared, fallback) {
     const raw = await Store.get(key, shared);
@@ -599,27 +615,34 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   }
 
   /* ========================= 导航 ========================= */
+  // navStack 与浏览器历史栈一一对应（每条记录带序号 n），用于应用内"返回"时判断能否直接 history.back()
+  const navStack = [];
+  function setHist(hs, replace) {
+    if (replace && navStack.length) { hs.n = navStack.length - 1; navStack[hs.n] = hs; } else { hs.n = navStack.length; navStack.push(hs); }
+    try { replace ? history.replaceState(hs, '') : history.pushState(hs, ''); } catch (e) { /* 忽略 */ }
+  }
   function go(view, params, replace) {
     Object.assign(state, params || {});
     state.view = view;
     state.packResult = null;
-    const hs = { view, caseId: state.caseId, recordId: state.recordId };
-    try { replace ? history.replaceState(hs, '') : history.pushState(hs, ''); } catch (e) { /* 忽略 */ }
+    setHist({ view, caseId: state.caseId, recordId: state.recordId }, replace);
     render();
     window.scrollTo(0, 0);
   }
   window.addEventListener('popstate', e => {
+    if (e.state && typeof e.state.n === 'number') navStack.length = e.state.n + 1;
     // 返回键先关闭扫码、图片计数界面（摄像头随之关闭）
-    if (overlayOpen()) { closeScanner(); closeCounter(); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
-    if (modal.kind) { closeModal(false); try { history.pushState({ view: state.view, caseId: state.caseId }, ''); } catch (err) { /* 忽略 */ } return; }
+    if (overlayOpen()) { closeScanner(); closeCounter(); setHist({ view: state.view, caseId: state.caseId, recordId: state.recordId }); return; }
+    if (modal.kind) { closeModal(false); setHist({ view: state.view, caseId: state.caseId, recordId: state.recordId }); return; }
     if (!state.user) return;
     const s = e.state || { view: 'cases' };
     run(async () => {
       if (state.view === 'record' && !(s.view === 'record' && s.recordId === state.recordId)) await leaveRecord();
       if (s.view === 'record' && s.recordId && state.caseData && state.caseData.id === s.caseId) { await openRecord(s.recordId, true); return; }
       if ((s.view === 'case' || s.view === 'record') && s.caseId) { await openCase(s.caseId, true); return; }
-      state.view = ['cases', 'admin', 'me'].includes(s.view) ? s.view : 'cases';
+      state.view = ['cases', 'admin', 'me', 'users', 'templates', 'prices', 'barcodes', 'backup', 'recordTpl'].includes(s.view) ? s.view : 'cases';
       render();
+      if (state.view === 'cases') refreshList(true);
     });
   });
 
@@ -683,8 +706,10 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     c.status = caseStats(c).complete ? 'complete' : 'draft';
     const ok = await setJSON(caseKey(c.id), c, true);
     state.caseDirty = !ok;
-    if (ok) await syncIndexEntry(c);
-    return ok;
+    if (!ok) return false;
+    // 案件列表索引也必须写入成功，否则刷新后案件会"消失"；失败时重试一次，仍失败按保存失败处理
+    if (!(await syncIndexEntry(c)) && !(await syncIndexEntry(c))) return false;
+    return true;
   }
   // 先读取存储中的最新版本再修改，减少多人同时修改时的覆盖
   // 写入前按共享存储中的最新记录重新核对权限（案件可能已被管理员改派给别人）
@@ -712,7 +737,11 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const r = await fn(latest);
     if (r === false) return null;
     const ok = await saveCase(latest, ts);
-    if (state.caseData && state.caseData.id === id) state.caseData = latest;
+    if (state.caseData && state.caseData.id === id) {
+      state.caseData = latest;
+      // 数据变了，上一次的打包校验结果（错误卡或"已生成"）作废
+      if (ok) { state.packResult = null; state.lastPackage = null; }
+    }
     return ok ? latest : null;
   }
   function addLog(c, action, detail) {
@@ -836,9 +865,10 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const cv = scaleToCanvas(src, PHOTO_MAX);
     if (src.close) try { src.close(); } catch (e) { /* 忽略 */ }
     if (state.settings.watermark) {
-      const lines = [meta.caseNumber + ' · ' + meta.label, fmtTime(capturedAt) + ' · 采集人：' + state.user.name];
+      const album = meta.source === 'album';
+      const lines = [meta.caseNumber + ' · ' + meta.label, (album ? '导入：' : '') + fmtTime(capturedAt) + ' · ' + (album ? '导入人：' : '采集人：') + state.user.name];
       if (geo) lines.push('位置：' + fmtGeo(geo));
-      if (meta.source === 'album') lines.push('相册导入');
+      if (album) lines.push('相册导入，非现场拍摄' + (file.lastModified ? '；原文件时间：' + fmtTime(file.lastModified) : ''));
       drawWatermark(cv, lines);
     }
     const full = cv.toDataURL('image/jpeg', PHOTO_Q);
@@ -956,6 +986,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   // 内置价格目录（构建时由 data/price-catalog.json 注入）；管理员可在"管理-价格目录"导入新目录覆盖
   const BUILTIN_CATALOG = /*__PRICE_CATALOG__*/null;
   const CAT_UNIT_TIAO = { '条': 1, '包': 0.1, '支': 0.005, '件': 50 }; // 按每件 50 条、每条 10 包、每包 20 支折算
+  // 一条卷烟记录登记时采用的价格目录（版本、名称、印发信息）。旧记录没有快照时，版本与内置目录一致则按内置目录，否则只用版本号
+  function catalogMetaOf(x) {
+    const B = BUILTIN_CATALOG || { title: '', version: '', issued: '' };
+    if (x.priceCatTitle != null) return { version: x.priceVersion || '', title: x.priceCatTitle || '', issued: x.priceIssued || '', builtin: x.priceCatTitle === B.title };
+    if (!x.priceVersion || x.priceVersion === B.version) return { version: B.version, title: B.title, issued: B.issued, builtin: true };
+    return { version: x.priceVersion, title: x.priceVersion, issued: '', builtin: false };
+  }
   function activeCatalog() { return state.customCatalog || BUILTIN_CATALOG || { title: '', version: '', issued: '', items: [] }; }
   let catalogIndex = null, catalogIndexSrc = null;
   function catalogMap() {
@@ -994,6 +1031,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const n = String(name || '').trim();
     if (!n) return null;
     for (const it of activeCatalog().items) if (it.name === n) return it;
+    // 本地条码库里登记过的品名（品名候选列表里也有它们）
+    for (const code of Object.keys(state.barcodeDict)) { const e = dictEntry(code); if (e && e.name === n) return e; }
     return null;
   }
   // 把登记数量折算成价格单位（条或支）；无法折算时返回 null
@@ -1065,13 +1104,20 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   function caseCause(c) { return (c.cause || '').trim() || (c.template && c.template.cause) || DEFAULT_CAUSE[c.typeId] || ''; }
   function priceBasisText(c, lines) {
     const custom = (state.settings.priceBasis || '').trim();
-    const cat = activeCatalog();
-    const usedCats = [...new Set(c.seizedItems.filter(s => s.priceSource === 'catalog' && !s.priceExit && s.priceCat).map(s => s.priceCat))];
     let text = custom;
     if (!text) {
-      const names = usedCats.map(k => '《' + cat.version + '湖南省' + k + '品牌价格目录》');
-      if (c.seizedItems.some(s => s.priceSource === 'catalog' && s.priceExit)) names.push('《退出' + cat.version + '湖南省国产卷烟价格目录》');
-      text = names.length ? '根据' + (cat.issued ? cat.issued.replace(/\s*印发$/, '印发的') : '') + names.join('、') + '所列建议零售价核定。' : '';
+      // 价格依据按每条记录登记时实际采用的目录版本生成（目录更新后，旧记录仍引用旧目录）；多个版本时逐一列出
+      const groups = new Map();
+      c.seizedItems.filter(x => x.priceSource === 'catalog').forEach(x => {
+        const m = catalogMetaOf(x);
+        const key = m.version + '|' + m.title + '|' + m.issued;
+        const g = groups.get(key) || { m, names: [] };
+        const name = m.builtin ? (x.priceExit ? '《退出' + m.version + '湖南省国产卷烟价格目录》' : x.priceCat ? '《' + m.version + '湖南省' + x.priceCat + '品牌价格目录》' : '') : '《' + m.title.replace(/^《|》$/g, '') + '》';
+        if (name && !g.names.includes(name)) g.names.push(name);
+        groups.set(key, g);
+      });
+      const parts = [...groups.values()].filter(g => g.names.length).map(g => (g.m.issued ? g.m.issued.replace(/\s*印发$/, '印发的') : '') + g.names.join('、'));
+      text = parts.length ? '根据' + parts.join('；') + '所列建议零售价核定。' : '';
     }
     // 烟叶、烟丝、空管烟、电子烟：按录入时的标准价（管理员可另写依据）
     const std = c.seizedItems.filter(x => x.priceSource === 'standard' && Number(x.price) > 0);
@@ -2096,7 +2142,10 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     if (version === false || version == null) return;
     const ok = await confirmDialog('读到 ' + r.items.length + ' 个品规' + (r.bad.length ? '，另有 ' + r.bad.length + ' 行格式不对已跳过（第 ' + r.bad.slice(0, 8).join('、') + (r.bad.length > 8 ? '…' : '') + ' 行）' : '') + '。\n导入后将替换当前价格目录，之后登记的卷烟按新价格带出；已登记的不受影响。', { title: '确认导入', okText: '导入' });
     if (!ok) return;
-    const cat = { title: version.trim() || file.name, version: version.trim(), issued: '', items: r.items, importedAt: Date.now(), importedBy: state.user.name };
+    // "名称"是完整目录名；"版本"取名称中的"XXXX年上/下半年"等短标识，二者分开存放，避免价格依据重复拼接
+    const title = version.trim() || file.name;
+    const short = (title.match(/\d{4}\s*年\s*[上下]半年|\d{4}\s*年(?:第[一二三四1-4]季度)?/) || [title])[0].replace(/\s+/g, '');
+    const cat = { title, version: short, issued: '', items: r.items, importedAt: Date.now(), importedBy: state.user.name };
     if (await setJSON(K.priceCatalog, cat, true)) { state.customCatalog = cat; toast('已导入价格目录：' + r.items.length + ' 个品规', 'ok'); render(); }
   }
   function viewBackup() {
@@ -2456,9 +2505,9 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const it = lookupName(s.brand);
     if (it && s.matchedCode !== it.code) { const typed = s.barcode; applyMatch(it); s.barcode = typed; refreshSeizedLive(); return; }
     // 条码带出后又手工改成目录外的品名：不再算"价格目录"来源，价格按手工录入，避免品名与价格依据不符
-    if (!it && s.matched === 'catalog' && s.brand !== s.matchedName) {
+    if (!it && s.matched && s.brand !== s.matchedName) {
       Object.assign(s, { matched: '', priceSource: s.price === '' ? '' : 'manual', priceCat: '', priceExit: false, catalogPrice: null });
-      modalRoot.querySelector('#barcode-msg').innerHTML = '<div class="match warn">品规已手工修改，与条码 ' + esc(s.matchedCode) + ' 在价格目录中的品规不一致；单价按手工录入处理，请核对</div>';
+      modalRoot.querySelector('#barcode-msg').innerHTML = '<div class="match warn">品规已手工修改，与条码 ' + esc(s.matchedCode) + ' 对应的品规不一致；单价按手工录入处理，请核对</div>';
       modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
     }
   }
@@ -3163,7 +3212,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       cc.evidence[ctx.itemId] = photoRecord(p, photoId);
       addLog(cc, replaced ? '替换照片' : '拍摄照片', itemLabel(cc, ctx.itemId) + (replaced && replaced.sha256 ? '（原照片 SHA-256 前 12 位：' + replaced.sha256.slice(0, 12) + '）' : ''));
     });
-    if (saved && replaced && replaced.photoId) Store.del(photoKey(replaced.photoId), true);
+    if (saved && replaced && replaced.photoId) await delData(photoKey(replaced.photoId));
     render();
     if (saved) { qualityToast(p); if (!(p.quality && p.quality.issues.length)) toast('已保存：' + label, 'ok', 1500); }
   }
@@ -3214,7 +3263,9 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const item = {
       id: s.id || uid(), kind: s.kind || 'cigarette', brand: cig ? s.brand : itemName(s.kind, s.sub, s.spec), qty: s.qty === '' ? '' : Number(s.qty), unit: s.unit || '条', barcode: code,
       price, priceUnit: s.priceUnit || '条', priceSource: price === '' ? '' : (s.priceSource || 'manual'), priceCat: s.priceSource === 'catalog' ? s.priceCat : '',
-      priceExit: s.priceSource === 'catalog' && !!s.priceExit, priceVersion: s.priceSource === 'catalog' ? activeCatalog().version : ''
+      priceExit: s.priceSource === 'catalog' && !!s.priceExit, priceVersion: s.priceSource === 'catalog' ? activeCatalog().version : '',
+      // 登记时快照目录名称和印发信息，目录更新后核价表仍按这里生成价格依据
+      priceCatTitle: s.priceSource === 'catalog' ? activeCatalog().title || '' : null, priceIssued: s.priceSource === 'catalog' ? activeCatalog().issued || '' : null
     };
     if (!cig) Object.assign(item, { sub: s.kind === 'ecig' ? s.sub : '', spec: s.spec });
     // 本次图片计数结果（数量依据）
@@ -3270,7 +3321,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       addExtras(cc);
     });
     if (!saved) { if (!modalRoot.querySelector('form[data-form="seized"]')) renderSeizedModal(false); return; }
-    if (oldPhotoId) Store.del(photoKey(oldPhotoId), true);
+    if (oldPhotoId) await delData(photoKey(oldPhotoId));
     // 价格目录里没有的条码：把品规和单价记入本地条码库，下次输入后 6 位即可带出
     if (cig && code && /^\d{6,14}$/.test(code) && item.brand && !catalogMap().has(code)) {
       const dict = await getJSON(K.barcodes, true, {}) || {};
@@ -3332,9 +3383,9 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       if (!removed) return false;
       addLog(cc, '删除照片', label + (removed.sha256 ? '（SHA-256 前 12 位：' + removed.sha256.slice(0, 12) + '）' : ''));
     });
-    if (saved && removed && removed.photoId) Store.del(photoKey(removed.photoId), true);
+    const dataOk = !(saved && removed && removed.photoId) || await delData(photoKey(removed.photoId));
     render();
-    if (saved) toast('已删除');
+    if (saved && dataOk) toast('已删除');
   }
   async function deleteCase() {
     const c = state.caseData;
@@ -3348,10 +3399,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       Object.values(c.evidence).forEach(e => e.photoId && ids.push(e.photoId));
       c.seizedItems.forEach(s => s.photoId && ids.push(s.photoId));
       c.extras.forEach(x => x.photoId && ids.push(x.photoId));
-      for (const id of ids) await Store.del(photoKey(id), true);
-      for (const x of (c.records || [])) await Store.del(recKey(x.id), true);
-      await Store.del(caseKey(c.id), true);
-      await syncIndexEntry(c, true);
+      // 先删照片和笔录，再删案件本体和索引；任何一步失败都不报"已删除"
+      let fail = 0;
+      for (const id of ids) if (!(await delData(photoKey(id)))) fail++;
+      for (const x of (c.records || [])) if (!(await delData(recKey(x.id)))) fail++;
+      if (fail) { toast('删除未完成：有 ' + fail + ' 项数据删除失败，案件已保留，请稍后重试', 'error', 6000); render(); return; }
+      if (!(await delData(caseKey(c.id)))) { render(); return; }
+      if (!(await syncIndexEntry(c, true))) { toast('案件数据已删除，但案件列表未更新，请在"管理 → 重建案件索引"中修复', 'error', 6000); }
     } finally { hideBusy(); }
     toast('已删除案件', 'ok');
     state.caseData = null;
@@ -3517,7 +3571,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const c = state.caseData, r = state.recordData; if (!r) return;
     if (!(await confirmDialog('确定删除' + recordTitle(r) + '吗？删除后无法恢复。', { danger: true, okText: '删除', title: '删除笔录' }))) return;
     clearTimeout(recTimer); recTimer = null;
-    await Store.del(recKey(r.id), true);
+    if (!(await delData(recKey(r.id)))) return;
     await mutateCase(c.id, cc => { cc.records = (cc.records || []).filter(x => x.id !== r.id); addLog(cc, '删除' + REC_TYPES[r.type], recordTitle(r)); });
     Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
     recSyncNeeded = false;
@@ -3912,7 +3966,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         addLog(c, '创建案件', t.name);
         if (!(await saveCase(c, now))) return;
         state.caseData = c; state.caseId = c.id;
-        history.replaceState({ view: 'cases' }, '');
+        setHist({ view: 'cases' }, true);
         go('case', { caseId: c.id });
         toast('案件已创建，请按清单逐项拍照', 'ok');
         return;
@@ -4044,8 +4098,11 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'back': {
         const to = el.dataset.to || 'cases';
         if (state.view === 'templateEdit') state.editTemplate = null;
+        // 上一条历史正好是返回目标时用 history.back()（与手机返回键一致），避免在历史栈里制造"列表 → 案件 → 列表"的环
+        const prev = navStack[navStack.length - 2];
+        if (prev && prev.view === to && (to !== 'case' || prev.caseId === state.caseId)) { if (state.view === 'templateEdit') state.editTemplate = null; history.back(); return; }
         if (state.view === 'record') await leaveRecord();
-        go(to, {}, false);
+        go(to, {}, true);
         if (to === 'cases') refreshList(true);
         return;
       }
@@ -4054,7 +4111,14 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'new-case': go('newCase'); return;
       case 'gen-number': {
         const inp = root.querySelector('input[name=number]');
-        if (inp) inp.value = '临-' + stamp(Date.now()).slice(0, 8) + '-' + stamp(Date.now()).slice(8) + '-' + state.user.name;
+        if (inp) {
+          // 精确到秒，并与已有编号比对，重复时加序号
+          const now = new Date(); const p2 = n => String(n).padStart(2, '0');
+          const base = '临-' + now.getFullYear() + p2(now.getMonth() + 1) + p2(now.getDate()) + '-' + p2(now.getHours()) + p2(now.getMinutes()) + p2(now.getSeconds()) + '-' + state.user.name;
+          let v = base, k = 2;
+          while (numberTaken(v)) v = base + '-' + (k++);
+          inp.value = v;
+        }
         return;
       }
       case 'open-case': await openCase(el.dataset.id); return;
@@ -4127,7 +4191,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
           removed = cc.seizedItems.splice(i, 1)[0];
           addLog(cc, '删除涉案物品', (removed.brand || '') + ' ' + (removed.qty || '') + (removed.unit || ''));
         });
-        if (saved && removed && removed.photoId) Store.del(photoKey(removed.photoId), true);
+        if (saved && removed && removed.photoId) await delData(photoKey(removed.photoId));
         render(); return;
       }
       case 'scan-barcode': startSeizedScan(); return;

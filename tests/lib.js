@@ -44,11 +44,11 @@ async function openPage(world, opts = {}) {
     const pick = shared => (shared ? world.shared : personal);
     await page.exposeFunction('__stGet', (k, s) => { const v = pick(s).get(k); return v === undefined ? null : { key: k, value: v, shared: s }; });
     await page.exposeFunction('__stSet', (k, v, s) => {
-      if (world.failSet) return null;
+      if (world.failSet || (world.failKeys && world.failKeys.has(k))) return null;
       world.writes++;
       pick(s).set(k, v); return { key: k, value: v, shared: s };
     });
-    await page.exposeFunction('__stDel', (k, s) => { pick(s).delete(k); return { key: k, deleted: true, shared: s }; });
+    await page.exposeFunction('__stDel', (k, s) => { if (world.failDel) return null; pick(s).delete(k); return { key: k, deleted: true, shared: s }; });
     await page.exposeFunction('__stList', (p, s) => ({ keys: [...pick(s).keys()].filter(k => k.startsWith(p || '')), prefix: p, shared: s }));
     await page.addInitScript(() => {
       window.storage = {
