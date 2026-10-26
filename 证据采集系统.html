@@ -14,6 +14,7 @@
   --ok: #1e7a45; --ok-l: #e5f5eb; --radius: 10px;
 }
 * { box-sizing: border-box; }
+html { scroll-padding-top: 64px; scroll-padding-bottom: 96px; } /* 滚动定位时不被顶部栏和底部操作栏挡住 */
 [hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
@@ -141,7 +142,7 @@ details > summary { cursor: pointer; min-height: 44px; display: flex; align-item
 .compare figcaption { font-size: 13px; color: var(--muted); text-align: center; margin-top: 4px; }
 .viewer-img { width: 100%; border-radius: 8px; background: #111; min-height: 120px; }
 #toast-root { position: fixed; left: 0; right: 0; top: calc(60px + env(safe-area-inset-top)); z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; padding: 0 12px; }
-.toast { max-width: 520px; width: 100%; background: #26312d; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 15px; box-shadow: 0 4px 12px rgba(0,0,0,.2); pointer-events: auto; }
+.toast { max-width: 520px; width: 100%; background: #26312d; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 15px; box-shadow: 0 4px 12px rgba(0,0,0,.2); pointer-events: none; /* 提示不挡住下面的按钮 */ }
 .toast.error { background: var(--danger); }
 .toast.warn { background: #8a5a00; }
 .toast.ok { background: var(--ok); }
@@ -216,7 +217,6 @@ input.readonly { background: #f3f5f4; color: var(--muted); }
 .seized-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 14px; }
 /* 扫码与图片计数（全屏层，在弹窗之上） */
 body.overlay-open { overflow: hidden; }
-body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和照片上的点按 */
 .overlay { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; }
 .scanner { background: #000; color: #fff; }
 .scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
@@ -580,7 +580,7 @@ else if (typeof exports === 'object')
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.6.0';
+  const APP_VERSION = '2.6.1';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -957,7 +957,7 @@ else if (typeof exports === 'object')
     if (!state.user) return;
     const s = e.state || { view: 'cases' };
     run(async () => {
-      if (state.view === 'record' && !(s.view === 'record' && s.recordId === state.recordId)) await leaveRecord();
+      if (state.view === 'record' && !(s.view === 'record' && s.recordId === state.recordId) && !(await leaveRecord())) { setHist({ view: 'record', caseId: state.caseId, recordId: state.recordId }); return; }
       if (s.view === 'record' && s.recordId && state.caseData && state.caseData.id === s.caseId) { await openRecord(s.recordId, true); return; }
       if ((s.view === 'case' || s.view === 'record') && s.caseId) { await openCase(s.caseId, true); return; }
       state.view = ['cases', 'admin', 'me', 'users', 'templates', 'prices', 'barcodes', 'backup', 'recordTpl'].includes(s.view) ? s.view : 'cases';
@@ -2703,7 +2703,8 @@ else if (typeof exports === 'object')
       id: s.id, kind, sub: s.sub || '烟弹', spec: s.spec || '', barcode: s.barcode || '', matchedCode: s.barcode || '', brand: s.brand || '', qty: s.qty === '' || s.qty == null ? '' : String(s.qty),
       unit: s.unit || '条', price: s.price == null ? '' : String(s.price), priceUnit: s.priceUnit || '条', priceSource: s.priceSource || '', priceCat: s.priceCat || '',
       priceExit: !!s.priceExit, catalogPrice: ['catalog', 'local', 'standard'].includes(s.priceSource) ? s.price : null,
-      matched: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.priceSource : '', thumb: s.thumb || '', matchedName: s.brand || ''
+      matched: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.priceSource : '', thumb: s.thumb || '',
+      savedCount: s.countTotal != null && s.countNote ? { n: Number(s.countTotal), unit: s.countTotalUnit || s.unit || '条' } : null, matchedName: s.brand || ''
     });
     if (kind !== 'cigarette' && base.catalogPrice == null) base.catalogPrice = stdPriceFor(kind, base.sub);
     return base;
@@ -2740,15 +2741,51 @@ else if (typeof exports === 'object')
         '<div class="small muted">' + (s.countParts && s.countParts.length ? '本次' + esc(countNoteText(s.countParts, s.unit)) : '拍一张码放好的照片，框住其中一' + esc(s.unit || '条') + '，自动数出相同的，核对后填入数量') + '</div></div>' : '');
   }
   function countNoteDisplay(it) {
-    return it.countNote + (it.countTotal != null && Number(it.qty) !== Number(it.countTotal) ? '；登记数量已人工改为 ' + it.qty + ' ' + (it.unit || '条') : '');
+    if (it.countTotal == null) return it.countNote;
+    const exp = convertQty(Number(it.countTotal), it.countTotalUnit || it.unit, it.unit);
+    return it.countNote + (exp == null || Number(it.qty) !== exp ? '；登记数量已人工改为 ' + it.qty + ' ' + (it.unit || '条') + '（与图片计数结果不一致）' : '');
   }
   // 可以拍照计数的物品类型（按个数清点的）
   const COUNT_KINDS = ['cigarette', 'ecig'];
+  // 卷烟数量单位换算（件、条、包、支）；无法换算时返回 null
+  function convertQty(q, from, to) {
+    from = from || '条'; to = to || '条';
+    if (from === to) return q;
+    if (!CAT_UNIT_TIAO[from] || !CAT_UNIT_TIAO[to]) return null;
+    return Math.round(q * CAT_UNIT_TIAO[from] / CAT_UNIT_TIAO[to] * 10000) / 10000;
+  }
+  // 图片计数结果按"计数时的单位"记录：计数数的是照片里的实物个数，改单位只能折算，不能把 16 条直接变成 16 件
+  function countTotalIn(parts, unit) {
+    let t = 0;
+    for (const p of parts) { const v = convertQty(p.n, p.unit || unit, unit); if (v == null) return null; t += v; }
+    return Math.round(t * 10000) / 10000;
+  }
   function countNoteText(parts, unit) {
     const sum = k => parts.reduce((a, p) => a + (Number(p[k]) || 0), 0);
-    const total = sum('n');
+    const units = [...new Set(parts.map(p => p.unit || unit || '条'))];
+    const cu = units[0];
     const detail = '自动识别 ' + sum('auto') + '，人工补 ' + sum('added') + '，人工剔除 ' + sum('removed') + (parts.some(p => p.region) ? '，限定了计数范围' : '');
-    return '图片计数' + (parts.length > 1 ? ' ' + parts.length + ' 张照片 ' + parts.map(p => p.n).join(' + ') + ' =' : '') + ' ' + total + ' ' + (unit || '条') + '（' + detail + '）';
+    let text = '图片计数' + (parts.length > 1 ? ' ' + parts.length + ' 张照片 ' + parts.map(p => p.n + (units.length > 1 ? (p.unit || cu) : '')).join(' + ') + (units.length > 1 ? '' : ' =') : '') +
+      (units.length > 1 ? '' : ' ' + sum('n') + ' ' + cu) + '（' + detail + '）';
+    const total = countTotalIn(parts, unit || '条');
+    if ((units.length > 1 || cu !== (unit || '条')) && total != null) text += '，折合 ' + total + ' ' + (unit || '条');
+    return text;
+  }
+  // 改单位：已有图片计数时按计数单位折算数量；无法折算的清空计数结果，要求重新填写
+  function onSeizedUnitChange() {
+    const s = state.seizedEdit;
+    // 本次新计数优先；没有时用已保存记录的计数结果（编辑旧记录只改单位的情况）
+    const parts = (s.countParts || []).length ? s.countParts : s.savedCount ? [s.savedCount] : [];
+    if (!parts.length) return;
+    const total = countTotalIn(parts, s.unit);
+    if (total == null) {
+      s.countParts = []; s.savedCount = null; s.qty = '';
+      toast('单位"' + s.unit + '"无法由图片计数结果折算，原计数结果已作废，请重新填写数量或重新计数', 'warn', 5000);
+    } else {
+      s.qty = String(total);
+      toast('已按图片计数结果折算为 ' + total + ' ' + s.unit, 'ok', 3000);
+    }
+    renderSeizedModal(false);
   }
   function renderSeizedModal(focus) {
     const s = state.seizedEdit; const c = state.caseData;
@@ -2897,7 +2934,7 @@ else if (typeof exports === 'object')
     const name = cig ? s.brand : itemName(s.kind, s.sub, s.spec);
     showBusy('正在保存计数照片…');
     let p; try { p = await processPhoto(res.file, { caseNumber: c.number, label: '涉案物品计数' + (name ? ' ' + name : ''), source: res.source }); } finally { hideBusy(); }
-    const part = { n: res.n, auto: res.auto, added: res.added, removed: res.removed, region: !!res.region, at: Date.now() };
+    const part = { n: res.n, unit: s.unit || '条', brand: name || '', auto: res.auto, added: res.added, removed: res.removed, region: !!res.region, at: Date.now() };
     const base = Number(s.qty) || 0;
     if (res.mode === 'add' && base > 0) { s.qty = String(Math.round((base + res.n) * 1000) / 1000); s.countParts = (s.countParts || []).concat(part); } else {
       s.qty = String(res.n); s.countParts = [part];
@@ -3842,10 +3879,19 @@ else if (typeof exports === 'object')
     };
     if (!cig) Object.assign(item, { sub: s.kind === 'ecig' ? s.sub : '', spec: s.spec });
     // 本次图片计数结果（数量依据）
-    const parts = s.countParts || [];
+    let parts = s.countParts || [];
+    // 计数后又改了品规：原计数不能作为新品规的数量依据
+    const countBrand = parts.length && parts[0].brand;
+    if (parts.length && countBrand && item.brand && countBrand !== item.brand) {
+      const snap = Object.assign({}, s);
+      const keep = await confirmDialog('图片计数时的品规是"' + countBrand + '"，现在是"' + item.brand + '"。\n原计数结果不能作为现在品规的数量依据，将不写入数量依据。继续保存吗？', { title: '品规已修改', okText: '继续保存', cancelText: '返回' });
+      state.seizedEdit = snap;
+      if (!keep) { renderSeizedModal(false); return; }
+      parts = []; state.seizedEdit.countParts = [];
+    }
     const countNote = parts.length ? countNoteText(parts, item.unit) : '';
-    if (parts.length) Object.assign(item, { countNote, countTotal: Math.round(parts.reduce((a, p) => a + p.n, 0) * 1000) / 1000 });
-    const countLog = countNote ? '；' + countNote + (Number(item.qty) !== item.countTotal ? '，登记数量人工改为 ' + item.qty + item.unit : '') : '';
+    if (parts.length) Object.assign(item, { countNote, countUnit: parts[0].unit || item.unit, countTotal: countTotalIn(parts, item.unit), countTotalUnit: item.unit });
+    const countLog = countNote ? '；' + countNote + (item.countTotal != null && Number(item.qty) !== item.countTotal ? '，登记数量人工改为 ' + item.qty + item.unit : '') : '';
     // 同一品规（卷烟看条码，其他物品看名称）、同一单位已登记过：询问是否合并数量
     let mergeInto = null;
     if (!s.id && (code || !cig) && Number(item.qty) > 0) {
@@ -3961,8 +4007,12 @@ else if (typeof exports === 'object')
     if (saved && dataOk) toast('已删除');
   }
   async function deleteCase() {
-    const c = state.caseData;
-    if (!canDeleteCase(c)) { toast('无权删除该案件', 'error'); return; }
+    if (!state.caseData) return;
+    // 按共享存储中的最新案件核对权限（可能已被改派、已打包或别人刚补拍了照片），并按最新数据删除
+    if (!(await ensureCaseAccess(state.caseData.id))) return;
+    const c = normalizeCase(await getJSON(caseKey(state.caseData.id), true, null)) || state.caseData;
+    state.caseData = c;
+    if (!canDeleteCase(c)) { render(); toast('无权删除该案件（已分配承办人或已打包的案件只能由管理员删除）', 'error', 5000); return; }
     const n = Object.keys(c.evidence).length + c.seizedItems.length + c.extras.length;
     const nr = (c.records || []).length;
     if (!(await confirmDialog('确定删除案件"' + c.number + '"吗？\n该案件的 ' + n + ' 条照片/登记记录' + (nr ? '和 ' + nr + ' 份笔录' : '') + '将一并删除，且无法恢复。', { danger: true, okText: '删除案件', title: '删除案件' }))) return;
@@ -3989,7 +4039,7 @@ else if (typeof exports === 'object')
   let recTimer = null, recSyncNeeded = false;
   function setSaveInd(status) { state.recSave = { status, at: Date.now() }; const el = $('#save-ind'); if (el) el.innerHTML = saveIndText(); }
   // 输入后 0.7 秒自动保存正文；案件中的摘要在离开编辑页、定稿等时同步
-  function touchRecord() { recSyncNeeded = true; setSaveInd('editing'); clearTimeout(recTimer); recTimer = setTimeout(() => run(saveRecordNow), 700); }
+  function touchRecord() { recSyncNeeded = true; state.recDirty = true; setSaveInd('editing'); clearTimeout(recTimer); recTimer = setTimeout(() => run(saveRecordNow), 700); }
   async function saveRecordNow() {
     clearTimeout(recTimer); recTimer = null;
     const r = state.recordData; if (!r) return true;
@@ -4006,14 +4056,14 @@ else if (typeof exports === 'object')
     }
     r.updatedAt = Date.now(); r.rev += 1; r.savedBy = state.user.name;
     const ok = await setJSON(recKey(r.id), r, true);
-    if (!ok) r.rev -= 1;
+    if (!ok) r.rev -= 1; else state.recDirty = false;
     setSaveInd(ok ? 'saved' : 'fail');
     return ok;
   }
   async function flushRecord(logAction, logDetail) {
     const r = state.recordData, c = state.caseData;
     if (!r) return true;
-    if (recTimer && !(await saveRecordNow())) return false;
+    if ((recTimer || state.recDirty) && !(await saveRecordNow())) return false;
     if (!c || (!recSyncNeeded && !logAction)) return true;
     recSyncNeeded = false;
     const saved = await mutateCase(c.id, cc => {
@@ -4028,6 +4078,7 @@ else if (typeof exports === 'object')
   }
   async function newRecord(type) {
     const c = state.caseData; if (!c || !REC_TYPES[type]) return;
+    if (!(await ensureCaseAccess(c.id))) return; // 先核对权限，避免改派后写出不属于任何案件的笔录
     const r = createRecord(type, c);
     if (!(await setJSON(recKey(r.id), r, true))) return;
     const saved = await mutateCase(c.id, cc => { cc.records = cc.records || []; cc.records.push(recordSummary(r)); addLog(cc, '新建' + REC_TYPES[type], recordTitle(r)); });
@@ -4039,6 +4090,7 @@ else if (typeof exports === 'object')
   }
   async function openRecord(id, fromPop) {
     const c = state.caseData;
+    if (c && !(await ensureCaseAccess(c.id))) return;
     const doc = normalizeRecord(await getJSON(recKey(id), true, null));
     if (!doc) { toast('笔录数据读取失败或已被删除', 'error'); return; }
     Object.assign(state, { recordData: doc, recordId: id, recSave: null, qaEditing: null, recConflict: null });
@@ -4047,10 +4099,15 @@ else if (typeof exports === 'object')
     recSyncNeeded = !cur || JSON.stringify(cur) !== JSON.stringify(recordSummary(doc));
     if (fromPop) { state.view = 'record'; render(); window.scrollTo(0, 0); } else go('record', { recordId: id });
   }
-  async function leaveRecord() {
+  // 返回 false 表示用户选择留在笔录页（保存失败时不能静默丢掉修改）
+  async function leaveRecord(force) {
     if (state.recConflict) { toast('笔录冲突未处理，你未保存的修改已放弃', 'warn', 4000); clearTimeout(recTimer); recTimer = null; state.recConflict = null; }
-    else if (state.recordData) await flushRecord();
-    Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
+    else if (state.recordData && !(await flushRecord()) && state.recordData && !force) {
+      const stay = !(await confirmDialog('笔录保存失败，现在离开会丢失还没保存的修改。\n建议留在本页，检查存储空间后再试。', { title: '笔录未保存', danger: true, okText: '仍然离开', cancelText: '留在本页' }));
+      if (stay) { setSaveInd('fail'); touchRecord(); return false; }
+    }
+    Object.assign(state, { recordData: null, recordId: null, qaEditing: null, recDirty: false });
+    return true;
   }
   function getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
   function setPath(obj, path, v) {
@@ -4058,7 +4115,14 @@ else if (typeof exports === 'object')
     for (let i = 0; i < ks.length - 1; i++) { if (o[ks[i]] == null) o[ks[i]] = {}; o = o[ks[i]]; }
     o[ks[ks.length - 1]] = v;
   }
-  function autoGrow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight + 2, 640) + 'px'; }
+  // 自动调整文本框高度；先记住滚动位置，避免高度临时归零时页面跳动（会让手指点到别的按钮上）
+  function autoGrow(el) {
+    const y = window.scrollY, h = el.offsetHeight;
+    el.style.height = h + 'px'; el.style.height = 'auto';
+    const want = Math.min(el.scrollHeight + 2, 640);
+    el.style.height = want + 'px';
+    if (window.scrollY !== y) window.scrollTo(0, y);
+  }
   function renderKeepScroll() { const y = window.scrollY; render(); window.scrollTo(0, y); }
   function updateQaCount() {
     const r = state.recordData; const el = $('#qa-count');
@@ -4154,10 +4218,13 @@ else if (typeof exports === 'object')
   }
   async function deleteRecord() {
     const c = state.caseData, r = state.recordData; if (!r) return;
+    if (!(await ensureCaseAccess(c.id))) return;
     if (!(await confirmDialog('确定删除' + recordTitle(r) + '吗？删除后无法恢复。', { danger: true, okText: '删除', title: '删除笔录' }))) return;
     clearTimeout(recTimer); recTimer = null;
-    if (!(await delData(recKey(r.id)))) return;
-    await mutateCase(c.id, cc => { cc.records = (cc.records || []).filter(x => x.id !== r.id); addLog(cc, '删除' + REC_TYPES[r.type], recordTitle(r)); });
+    // 先按最新案件核对权限并移除摘要（mutateCase 内含权限校验），成功后才删除笔录正文
+    const saved = await mutateCase(c.id, cc => { cc.records = (cc.records || []).filter(x => x.id !== r.id); addLog(cc, '删除' + REC_TYPES[r.type], recordTitle(r)); });
+    if (!saved) return;
+    if (!(await delData(recKey(r.id)))) toast('笔录已从案件中移除，但笔录数据删除失败，可能残留在存储中', 'error', 6000);
     Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
     recSyncNeeded = false;
     go('case', {}, true);
@@ -4165,6 +4232,7 @@ else if (typeof exports === 'object')
   }
   async function previewRecord() {
     const c = state.caseData, r = state.recordData; if (!r) return;
+    if (!(await ensureCaseAccess(c.id))) return;
     await flushRecord();
     showModal('<div class="row between nowrap"><h3 style="margin:0" class="grow">预览：' + esc(recordTitle(r)) + '</h3><button type="button" class="btn btn-sm" data-action="preview-zoom">放大字号</button></div>' +
       '<p class="small muted">可给被询问人、当事人查看核对；正式文本以生成的 Word 打印件为准。</p>' + modelHtml(recordModel(c, r)) +
@@ -4173,6 +4241,7 @@ else if (typeof exports === 'object')
   }
   async function downloadRecordDocx() {
     const c = state.caseData, r = state.recordData; if (!r) return;
+    if (!(await ensureCaseAccess(c.id))) return;
     if (typeof JSZip === 'undefined') { toast('打包组件（JSZip）未加载，无法生成 Word', 'error'); return; }
     const issues = recordIssues(c, r);
     if (issues.length) {
@@ -4706,10 +4775,10 @@ else if (typeof exports === 'object')
         if (state.view === 'record' && state.recConflict && !(await confirmDialog('笔录冲突还没有处理，你未保存的修改离开后会丢失。确定离开吗？', { title: '离开笔录', danger: true, okText: '离开' }))) return;
         if (state.view === 'record' && state.recConflict) { clearTimeout(recTimer); recTimer = null; state.recConflict = null; state.recordData = null; }
         if (state.view === 'templateEdit') state.editTemplate = null;
+        if (state.view === 'record' && !(await leaveRecord())) return;
         // 上一条历史正好是返回目标时用 history.back()（与手机返回键一致），避免在历史栈里制造"列表 → 案件 → 列表"的环
         const prev = navStack[navStack.length - 2];
         if (prev && prev.view === to && (to !== 'case' || prev.caseId === state.caseId)) { if (state.view === 'templateEdit') state.editTemplate = null; history.back(); return; }
-        if (state.view === 'record') await leaveRecord();
         go(to, {}, true);
         if (to === 'cases') refreshList(true);
         return;
@@ -5118,6 +5187,7 @@ else if (typeof exports === 'object')
       if (el.name === 'barcode' && ev.type === 'input') onSeizedCodeInput();
       else if (el.name === 'brand') onSeizedBrandInput();
       else if (el.name === 'price') onSeizedPriceInput();
+      else if (el.name === 'unit' && ev.type === 'change' && ((state.seizedEdit.countParts || []).length || state.seizedEdit.savedCount)) { syncSeizedForm(); onSeizedUnitChange(); }
       else if (el.name === 'qty' || el.name === 'unit') { syncSeizedForm(); modalRoot.querySelector('#subtotal').innerHTML = subtotalText(state.seizedEdit); }
     }
   }
@@ -5150,6 +5220,10 @@ else if (typeof exports === 'object')
   importInput.addEventListener('change', () => { const f = importInput.files && importInput.files[0]; if (f) run(() => importData(f)); });
   $('#save-banner-close').addEventListener('click', () => { $('#save-banner').hidden = true; });
 
+  // 停留在案件/笔录页时，每 30 秒按最新记录核对一次权限，改派后旧页面会自动退出
+  setInterval(() => {
+    if (state.user && state.caseId && ['case', 'record'].includes(state.view) && !document.hidden && !modal.kind && !overlayOpen()) run(() => ensureCaseAccess(state.caseId));
+  }, REFRESH_MS);
   // 列表每 30 秒自动刷新（无实时同步）
   setInterval(() => {
     if (state.user && state.view === 'cases' && !modal.kind && !document.hidden) run(() => refreshList(true));

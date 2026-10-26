@@ -45,7 +45,7 @@ npx playwright install chromium
 ```bash
 npm run build               # 用 src/app.html 生成 证据采集系统.html（改了源码后要执行）
 npm test                    # 构建 + 运行全部测试，并更新 tests/测试结果.md（约 2–3 分钟）
-node tests/run-all.js p0    # 只跑某一组（core / accounts / seized / scan / bugfix / collab / ocr / price / items / records / p0 / p1），或用例名中的关键词
+node tests/run-all.js p0    # 只跑某一组（core / accounts / seized / scan / bugfix / collab / ocr / round2 / price / items / records / p0 / p1），或用例名中的关键词
 node tests/screenshots.js   # 重新生成 screenshots/ 下的截图
 ```
 
@@ -56,8 +56,8 @@ node tests/screenshots.js   # 重新生成 screenshots/ 下的截图
 - [第二轮独立测试报告（v2.4.2，2026-10-26）](docs/qa/独立测试报告-v2.4.2-2026-10-26.pdf)：回归 12 个旧问题 + 新增涉案物品/扫码/计数/笔录/Word/证据包；含 1 个严重、2 个高、2 个中、3 个低问题。
 - [报告说明与当前版本状态](docs/qa/README.md)：两份报告的适用版本、已修复项和当前问题一览。
 - [第一轮独立测试报告（v2.1.0 基线，2026-10-26）](docs/qa/独立测试报告-v2.1.0-2026-10-26.pdf)：历史归档，不应直接当作当前版本问题列表。
-- 当前自动化测试：v2.6.0 为 82/82 通过，结果见 [tests/测试结果.md](tests/测试结果.md)。
-- **范围提示：**v2.4.2 报告不覆盖 v2.6.0 新增的证件 OCR；报告中的严重问题 V242-01 已在 v2.6.0 构建上复现，详见 [报告说明](docs/qa/README.md)。
+- 当前自动化测试：v2.6.1 为 86/86 通过，结果见 [tests/测试结果.md](tests/测试结果.md)。
+- **范围提示：**v2.4.2 报告不覆盖 v2.6.0 新增的证件 OCR；报告中的问题已在 v2.4.3 / v2.6.1 全部修复并补了回归用例，详见 [报告说明](docs/qa/README.md)。
 
 ## 功能概览
 
