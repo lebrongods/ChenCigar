@@ -92,6 +92,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--pri); outli
 .actionbar .next-shot .btn { flex: 0 0 auto; padding: 8px 12px; }
 .actionbar .next-shot .next-close { padding: 8px; color: var(--muted); }
 .next-spacer { height: 72px; }
+.person-preview { width: 100%; max-height: 220px; object-fit: contain; background: #222; border-radius: 8px; margin-bottom: 8px; }
+.chip-radio { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 18px; font-size: 14px; cursor: pointer; }
+.chip-radio input { width: 18px; height: 18px; }
+.person-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; padding: 8px; background: var(--pri-l); border-radius: 8px; }
+.confirm-check { margin-top: 8px; padding: 8px; border: 2px solid var(--warn); border-radius: 8px; background: var(--warn-l); }
+.list-item .col { display: flex; flex-direction: column; gap: 6px; }
 .case-card { cursor: pointer; }
 .case-no { font-size: 16px; overflow-wrap: anywhere; }
 .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -260,12 +266,16 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
 <script>/*__JSZIP_INLINE__*/</script>
 <!-- ZXing 0.23.0 的 EAN/UPC 条码识别部分（Apache License 2.0），浏览器不支持 BarcodeDetector 时使用 -->
 <script>/*__ZXING_INLINE__*/</script>
+<!-- 证件文字识别：Tesseract.js 5.1.1（Apache-2.0）及简体中文识别模型（tessdata，Apache-2.0）。不执行，用到时再加载，全程本机离线 -->
+<script type="text/plain" id="ocr-lib">/*__OCR_LIB__*/</script>
+<script type="text/plain" id="ocr-worker">/*__OCR_WORKER__*/</script>
+<script type="text/plain" id="ocr-lang">/*__OCR_LANG__*/</script>
 <script>
 (function () {
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.5.0';
+  const APP_VERSION = '2.6.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -1899,13 +1909,14 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       (isAdmin() ? '<button type="button" class="btn btn-sm" data-action="assign-case" data-id="' + esc(c.id) + '">' + (c.assignedTo ? '重新分配' : '分配承办人') + '</button>' : '') +
       '<button type="button" class="btn btn-sm" data-action="reload-case">刷新</button></div></div>';
     if (st.text === '打包后有修改') html += '<div class="card alert-warn small">证据包生成后本案又有修改，请重新生成证据包。</div>';
-    html += '<nav class="quick-nav" aria-label="快速跳转">' + [['sec-photos', '照片'], ['sec-items', '涉案物品'], ['sec-records', '笔录'], ['sec-extras', '补充照片'], ['sec-log', '日志']]
+    html += '<nav class="quick-nav" aria-label="快速跳转">' + [['sec-photos', '照片'], ['sec-items', '涉案物品'], ['sec-persons', '人员'], ['sec-records', '笔录'], ['sec-extras', '补充照片'], ['sec-log', '日志']]
       .map(x => '<button type="button" class="btn btn-sm" data-action="jump" data-to="' + x[0] + '">' + x[1] + '</button>').join('') + '</nav>';
     html += packResultHtml();
     c.template.categories.forEach((cat, ci) => {
       html += '<div class="section-title"' + (ci === 0 ? ' id="sec-photos"' : '') + '><h2>' + esc(cat.name) + '</h2></div><div class="tiles">' + cat.items.map(it => itemTileHtml(c, it)).join('') + '</div>';
     });
     html += seizedSectionHtml(c);
+    html += personsSectionHtml(c);
     html += recordsSectionHtml(c);
     html += extrasSectionHtml(c);
     html += '<div class="card" id="sec-log" style="margin-top:16px"><details><summary>操作日志（' + c.log.length + ' 条）</summary>' +
@@ -2266,7 +2277,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   function inquirySubjectCardHtml(r, D) {
     return '<div class="card"><details open><summary>被询问人</summary><div class="field"><span class="muted small">身份</span><div class="chips">' +
       SUBJECT_ROLES.map(x => '<button type="button" class="btn btn-sm chip' + (r.subject.role === x ? ' active' : '') + '" data-action="rf-chip" data-rf="subject.role" data-v="' + x + '" data-keep="1"' + D + '>' + x + '</button>').join('') + '</div></div>' +
-      personFieldsHtml('subject', r.subject, D, true) + '</details></div>';
+      personPickHtml('subject', D) + personFieldsHtml('subject', r.subject, D, true) + '</details></div>';
   }
   function hintLabel(h) { return h === '@物品清单' ? '填入物品清单' : h === '@本人信息' ? '填入本人信息' : h; }
   function qaSectionHtml(c, r, D) {
@@ -2292,9 +2303,9 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const absent = r.party.present === '不在场';
     return '<div class="card"><details open><summary>当事人与见证人</summary><div class="field"><span class="muted small">当事人是否在场</span><div class="seg">' +
       ['在场', '不在场'].map(v => '<button type="button" class="btn' + (r.party.present === v ? ' active' : '') + '" data-action="rf-chip" data-rf="party.present" data-v="' + v + '" data-keep="1"' + D + '>' + v + '</button>').join('') + '</div></div>' +
-      personFieldsHtml('party', r.party, D, true) +
+      personPickHtml('party', D) + personFieldsHtml('party', r.party, D, true) +
       '<h3 style="margin:12px 0 8px">见证人' + (absent ? ' <span class="badge req">当事人不在场时应有见证人</span>' : ' <span class="muted small">（可选）</span>') + '</h3>' +
-      personFieldsHtml('witness', r.witness, D, false) + '</details></div>';
+      personPickHtml('witness', D) + personFieldsHtml('witness', r.witness, D, false) + '</details></div>';
   }
   function sceneFactsCardHtml(c, r, D) {
     const fields = sceneFieldsFor(c.typeId).map(f => {
@@ -2352,12 +2363,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       '<button type="submit" class="btn btn-primary btn-block">保存新 PIN</button></form>' +
       '<div class="card" id="about"><h3>关于本系统</h3><div class="kv"><div>版本</div><div>v' + APP_VERSION + '</div><div>存储方式</div><div>' + backendText + '</div>' +
       '<div>条码识别</div><div>' + ('BarcodeDetector' in window ? '浏览器自带识别' : zxingReady() ? '内置识别库' : '不可用，请手工输入') + '</div>' +
-      '<div>摄像头扫码</div><div>' + (liveCameraSupported() ? '可实时扫码' : '当前打开方式不能直接用摄像头，扫码时改用拍照识别') + '</div><div>第三方组件</div><div>JSZip 3.10.1（MIT）；ZXing 0.23.0 条码识别部分（Apache License 2.0）</div><div>存储占用</div><div id="quota">—</div></div>' +
+      '<div>摄像头扫码</div><div>' + (liveCameraSupported() ? '可实时扫码' : '当前打开方式不能直接用摄像头，扫码时改用拍照识别') + '</div><div>第三方组件</div><div>JSZip 3.10.1（MIT）；ZXing 0.23.0 条码识别部分（Apache License 2.0）；Tesseract.js 5.1.1 及简体中文识别模型（Apache License 2.0）</div><div>存储占用</div><div id="quota">—</div></div>' +
       '<h3 style="margin-top:12px">使用限制（请知悉）</h3><ol class="small" style="padding-left:20px;margin:0">' +
       '<li>角色权限为<strong>界面层控制</strong>：数据保存在共享存储中，不是服务器级访问控制，不能防止有技术能力的人直接读取数据。</li>' +
       '<li><strong>无实时同步</strong>：他人新建或修改的数据需刷新后可见（案件列表每 30 秒自动刷新，也可手动刷新）；两人同时修改同一案件时，后保存的可能覆盖先保存的。</li>' +
       '<li>"必拍项缺失拦截"只保证<strong>不会漏拍</strong>，不能证明<strong>拍得对、拍得清</strong>，照片内容仍需人工审核。拍照质量提示（偏暗/过曝/模糊）只是参考，可能误报或漏报。</li>' +
       '<li>扫码优先用浏览器自带的条码识别，没有时用系统内置的识别库，只识别商品条码（EAN/UPC）。实时扫码需要通过 https 网址或在本机打开；不满足时自动改用拍照识别。条码破损、反光、对不上焦时可能识别不出，请手工输入后 6 位。</li>' +
+      '<li>证件识别（身份证、驾驶证）在本机离线完成，照片不上传；识别结果可能有错字，必须对照证件原件核对并勾选确认后才保存。需要较新的浏览器（Chrome 91+、iOS 16.4+），旧浏览器只能手工填写。</li>' +
       '<li>图片计数是按外观找与框选那一条相同的物品，被遮挡、叠压、反光严重的数不出来，外观相近的可能误数；必须逐个核对，数量以现场清点为准。</li>' +
       '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
       '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li>' +
@@ -3149,6 +3161,224 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     if (opts.onDone) await opts.onDone(result);
   }
 
+  /* ========================= 证件辅助录入（身份证、驾驶证 OCR） ========================= */
+  // 全程在本机离线识别（Tesseract.js + 简体中文模型），识别结果只是草稿，必须对照证件原件人工核对确认后才保存。
+  const DOC_TYPES = { idcard: '身份证', driver: '驾驶证', manual: '手工录入' };
+  const PERSON_ROLES = ['当事人', '驾驶人', '证人', '其他'];
+  let ocrWorkerP = null, ocrIdleTimer = 0;
+  // 识别核心需要浏览器支持 WebAssembly SIMD（Chrome 91+、iOS 16.4+）
+  function ocrSupported() {
+    try { return typeof WebAssembly === 'object' && WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11])) && !!$('#ocr-worker') && $('#ocr-worker').textContent.length > 1000; } catch (e) { return false; }
+  }
+  function getOcrWorker() {
+    clearTimeout(ocrIdleTimer);
+    if (!ocrWorkerP) {
+      ocrWorkerP = (async () => {
+        if (!window.Tesseract) { const s = document.createElement('script'); s.textContent = $('#ocr-lib').textContent; document.head.appendChild(s); }
+        const url = URL.createObjectURL(new Blob([$('#ocr-worker').textContent], { type: 'text/javascript' }));
+        const lang = fromB64($('#ocr-lang').textContent.trim());
+        return window.Tesseract.createWorker([{ code: 'chi_sim', data: lang }], 1, { workerPath: url, workerBlobURL: false, cacheMethod: 'none', gzip: true, logger: () => {}, errorHandler: () => {} });
+      })().catch(e => { ocrWorkerP = null; throw e; });
+    }
+    return ocrWorkerP;
+  }
+  // 用完 2 分钟后释放识别引擎（约占 100 MB 内存）
+  function releaseOcrLater() {
+    clearTimeout(ocrIdleTimer);
+    ocrIdleTimer = setTimeout(async () => { const p = ocrWorkerP; ocrWorkerP = null; if (p) try { (await p).terminate(); } catch (e) { /* 忽略 */ } }, 120000);
+  }
+  function ocrDate(s) { const m = String(s || '').match(/(\d{4})\s*[-.\/年]\s*(\d{1,2})\s*[-.\/月]\s*(\d{1,2})/); return m ? m[1] + '-' + pad2(+m[2]) + '-' + pad2(+m[3]) : ''; }
+  function ocrDates(s) { return [...String(s || '').matchAll(/(\d{4})\s*[-.\/年]\s*(\d{1,2})\s*[-.\/月]\s*(\d{1,2})/g)].map(m => m[1] + '-' + pad2(+m[2]) + '-' + pad2(+m[3])); }
+  function ocrIdNumber(text) {
+    const t = String(text || '').replace(/[\s　]/g, '').replace(/[Oo〇Dd]/g, '0').replace(/[Il|]/g, '1').replace(/[xｘ×χ]/g, 'X');
+    const all = [...t.matchAll(/\d{17}[\dX]/g)].map(m => m[0]);
+    const valid = all.find(x => (parseIdNo(x) || {}).valid);
+    return { idNo: valid || all[0] || '', valid: !!valid };
+  }
+  const cjk = s => String(s || '').replace(/[^一-龥·]/g, '');
+  // 把识别出的文字按行整理：去掉空格和常见的误识符号
+  function ocrLines(text) { return String(text || '').split(/\n+/).map(l => l.replace(/[\s　]+/g, '').replace(/[“”"'‘’|｜:：，,。_—\-~]/g, (ch, i, str) => (/[-—]/.test(ch) && /\d/.test(str[i - 1] || '') ? '-' : ''))).filter(Boolean); }
+  function afterLabel(lines, re) { for (const l of lines) { const m = l.match(re); if (m) return l.slice(m.index + m[0].length); } return ''; }
+  function parseIdCardText(text) {
+    const lines = ocrLines(text); const id = ocrIdNumber(text);
+    const p = { idNo: id.idNo };
+    p.name = cjk(afterLabel(lines, /^姓名|^姓|^名/)).replace(/^(性别|民族).*/, '').slice(0, 8);
+    const g = text.replace(/\s/g, '').match(/性别?([男女])/) || text.replace(/\s/g, '').match(/([男女])民族/); p.gender = g ? g[1] : '';
+    p.ethnic = cjk(afterLabel(lines, /民族|民/)).replace(/族$/, '').slice(0, 6);
+    p.birth = ocrDate(lines.find(l => /\d{4}年\d{1,2}月\d{1,2}/.test(l)) || '');
+    // 住址：从"住址"开始，到"公民身份号码"之前，可能有两三行
+    let i = lines.findIndex(l => /^住址|^住|^址/.test(l) || /住址/.test(l));
+    if (i < 0) i = lines.findIndex(l => /\d{4}年\d{1,2}月/.test(l)) + 1 || -1;
+    const addr = [];
+    if (i >= 0) {
+      for (let k = i; k < lines.length; k++) {
+        const l = lines[k];
+        if (/公民|身份|号码|\d{15,}/.test(l) && k > i) break;
+        addr.push(k === i ? l.replace(/^.*?(住址|住|址)/, '') : l);
+      }
+    }
+    p.address = addr.join('').replace(/[^一-龥0-9A-Za-z\-（）()#·]/g, '').replace(/(公民身份号码|公民|身份).*$/, '').slice(0, 60);
+    return p;
+  }
+  function parseDriverText(text) {
+    const lines = ocrLines(text); const flat = lines.join('');
+    const id = ocrIdNumber(text);
+    const p = { idNo: id.idNo };
+    p.name = cjk(afterLabel(lines, /姓名/)).replace(/(性别|男|女|国籍).*$/, '').slice(0, 8);
+    const g = flat.match(/性别?([男女])/); p.gender = g ? g[1] : '';
+    p.nationality = cjk(afterLabel(lines, /国籍/)).slice(0, 6);
+    p.address = afterLabel(lines, /住址/).replace(/[^一-龥0-9A-Za-z\-（）()#·]/g, '').slice(0, 60);
+    const birthLine = afterLabel(lines, /出生日期|出生/); p.birth = ocrDate(birthLine);
+    p.firstIssue = ocrDate(afterLabel(lines, /初次领证日期|初次领证|领证日期/));
+    const cls = flat.match(/准驾车型?([A-Z][0-9A-Z]{0,7})/) || flat.match(/\b(A[123]|B[12]|C[1-6]|[DEFMNP])\b/);
+    p.licenseClass = cls ? cls[1] : '';
+    const valid = afterLabel(lines, /有效期限|有效期/);
+    const ds = ocrDates(valid);
+    p.validFrom = ds[0] || ''; p.validTo = ds[1] || (/长期/.test(valid) ? '长期' : (valid.match(/\d+年/) || [''])[0]);
+    return p;
+  }
+  function rotatedCanvas(src, rot, max) {
+    const { w: W, h: H } = dims(src); const k = Math.min(1, max / Math.max(W, H));
+    const w = Math.round(W * k), h = Math.round(H * k);
+    const cv = document.createElement('canvas'); cv.width = rot % 180 ? h : w; cv.height = rot % 180 ? w : h;
+    const x = cv.getContext('2d'); x.translate(cv.width / 2, cv.height / 2); x.rotate(rot * Math.PI / 180); x.drawImage(src, -w / 2, -h / 2, w, h);
+    return cv;
+  }
+  // 识别一张证件照片：先按原方向，识别不到有效身份证号码时再试旋转 90°/270°/180°
+  async function ocrDocument(file, docType) {
+    const src = await loadImageFromFile(file);
+    try {
+      const w = await getOcrWorker();
+      let best = null;
+      for (const rot of [0, 90, 270, 180]) {
+        const cv = rotatedCanvas(src, rot, 1800);
+        const r = await w.recognize(cv);
+        const text = r.data.text || '';
+        const parsed = docType === 'driver' ? parseDriverText(text) : parseIdCardText(text);
+        const score = ((parseIdNo(parsed.idNo) || {}).valid ? 10 : 0) + (parsed.name ? 2 : 0) + (parsed.address ? 1 : 0) + (r.data.confidence || 0) / 100;
+        if (!best || score > best.score) best = { score, text, parsed, rot };
+        if (score >= 10) break;
+      }
+      const thumbCv = scaleToCanvas(src, 720);
+      best.preview = thumbCv.toDataURL('image/jpeg', 0.8);
+      return best;
+    } finally { if (src.close) try { src.close(); } catch (e) { /* 忽略 */ } releaseOcrLater(); }
+  }
+  // 核对：身份证号码校验、号码中的出生日期/性别与识别结果是否一致
+  function personChecks(p) {
+    const out = [];
+    const info = parseIdNo(p.idNo);
+    if (!p.name) out.push('姓名未识别出来，请手工填写');
+    if (!p.idNo) out.push('身份证号码未识别出来，请手工填写');
+    else if (!info || !info.valid) out.push('身份证号码校验不通过，请对照证件逐位核对');
+    else {
+      if (p.birth && p.birth !== info.birth) out.push('出生日期与身份证号码不一致（号码为 ' + info.birth + '）');
+      if (p.gender && p.gender !== info.gender) out.push('性别与身份证号码不一致（号码为' + info.gender + '）');
+    }
+    return out;
+  }
+  function personFormHtml(p, preview) {
+    const f = (k, label, extra) => '<label class="field"><span>' + label + '</span><input type="text" name="' + k + '" value="' + esc(p[k] || '') + '"' + (extra || '') + '></label>';
+    const drv = p.docType === 'driver';
+    return '<form data-form="person" autocomplete="off">' +
+      (preview ? '<img src="' + preview + '" alt="证件照片" class="person-preview">' : '') +
+      (p.source === 'ocr' ? '<div class="alert-warn card small">以下内容由系统识别，<strong>可能有错字</strong>。请对照证件原件逐项核对、改正后再保存。</div>' : '') +
+      '<div class="field"><span class="muted small">身份</span><div class="chips">' + PERSON_ROLES.map(x => '<label class="chip-radio"><input type="radio" name="role" value="' + x + '"' + (p.role === x ? ' checked' : '') + '>' + x + '</label>').join('') + '</div></div>' +
+      f('name', '姓名 *', ' maxlength="20"') + f('idNo', drv ? '证号（身份证号码） *' : '公民身份号码 *', ' maxlength="18" inputmode="text"') +
+      '<div class="small" id="person-checks"></div>' +
+      '<div class="row nowrap"><label class="field" style="width:90px"><span>性别</span><select name="gender"><option value=""></option>' + ['男', '女'].map(g => '<option' + (p.gender === g ? ' selected' : '') + '>' + g + '</option>').join('') + '</select></label>' +
+      (drv ? f('nationality', '国籍') : f('ethnic', '民族')) + '</div>' +
+      '<label class="field"><span>出生日期</span><input type="date" name="birth" value="' + esc(p.birth || '') + '"></label>' +
+      f('address', '住址', ' maxlength="80"') +
+      (drv ? '<div class="row nowrap">' + f('licenseClass', '准驾车型', ' maxlength="10"') + '<label class="field grow"><span>初次领证日期</span><input type="date" name="firstIssue" value="' + esc(p.firstIssue || '') + '"></label></div>' +
+        '<div class="row nowrap">' + f('validFrom', '有效期起', ' placeholder="YYYY-MM-DD"') + f('validTo', '有效期至', ' placeholder="YYYY-MM-DD 或 长期"') + '</div>' : '') +
+      f('phone', '联系电话（证件上没有，可现场询问后填写）', ' inputmode="tel" maxlength="20"') +
+      (preview ? '<label class="check small"><input type="checkbox" name="savePhoto">同时把证件照片存入本案补充照片</label>' : '') +
+      '<label class="check confirm-check"><input type="checkbox" name="confirmed"' + (p.confirmedAt && p.source !== 'ocr' ? ' checked' : '') + '><span>我已对照证件原件核对以上信息，确认无误</span></label>' +
+      '<div id="person-msg" class="danger-text small"></div>' +
+      '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">确认保存</button></div></form>';
+  }
+  function refreshPersonChecks() {
+    const f = modalRoot.querySelector('form[data-form=person]'); if (!f) return;
+    const p = { name: f.name.value.trim(), idNo: f.idNo.value.trim().toUpperCase(), birth: f.birth.value, gender: f.gender.value };
+    const info = parseIdNo(p.idNo);
+    if (info && info.valid) { if (!p.birth) f.birth.value = p.birth = info.birth; if (!p.gender) f.gender.value = p.gender = info.gender; }
+    const list = personChecks(p);
+    modalRoot.querySelector('#person-checks').innerHTML = list.length ? list.map(x => '<div class="warn-text">· ' + esc(x) + '</div>') .join('') : '<div class="ok-text">身份证号码校验通过，出生日期、性别与号码一致</div>';
+  }
+  function showPersonModal(p, preview) {
+    state.personEdit = { p, preview };
+    showModal('<h3>' + (p.id ? '编辑人员信息' : '核对' + (DOC_TYPES[p.docType] || '') + '信息') + '</h3>' + personFormHtml(p, preview), 'person');
+    refreshPersonChecks();
+  }
+  async function startPersonOcr(file, docType, source) {
+    if (!ocrSupported()) { toast('当前浏览器版本过低，不能离线识别证件，请手工填写', 'warn', 5000); showPersonModal({ docType: 'manual', source: 'manual', role: '当事人' }); return; }
+    showBusy('正在识别' + DOC_TYPES[docType] + '（本机离线识别，首次约需几秒）…');
+    let r;
+    try { r = await ocrDocument(file, docType); } catch (e) { hideBusy(); toast('识别失败：' + (e && e.message || e) + '。请手工填写', 'error', 6000); showPersonModal({ docType, source: 'manual', role: '当事人' }); return; } finally { hideBusy(); }
+    const p = Object.assign({ docType, source: 'ocr', role: docType === 'driver' ? '驾驶人' : '当事人', ocrText: r.text.slice(0, 2000) }, r.parsed);
+    state.personFile = { file, source };
+    showPersonModal(p, r.preview);
+    if (!(parseIdNo(p.idNo) || {}).valid) toast('未能完整识别证件号码，请对照证件填写；拍照时让证件占满画面、避免反光', 'warn', 5000);
+  }
+  async function savePerson(f) {
+    const msg = modalRoot.querySelector('#person-msg');
+    const pe = state.personEdit; if (!pe) return;
+    const v = n => (f.elements[n] ? String(f.elements[n].value || '').trim() : '');
+    const p = Object.assign({}, pe.p, { role: (f.querySelector('input[name=role]:checked') || {}).value || '其他', name: v('name'), idNo: v('idNo').toUpperCase(), gender: v('gender'), ethnic: v('ethnic'), nationality: v('nationality'), birth: v('birth'), address: v('address'), phone: v('phone'), licenseClass: v('licenseClass').toUpperCase(), firstIssue: v('firstIssue'), validFrom: v('validFrom'), validTo: v('validTo') });
+    if (!p.name) { msg.textContent = '请填写姓名'; return; }
+    if (!f.confirmed.checked) { msg.textContent = '请先对照证件原件核对，并勾选"我已核对"'; return; }
+    const info = parseIdNo(p.idNo);
+    if (p.idNo && !(info && info.valid) && !(await confirmDialog('身份证号码"' + p.idNo + '"校验不通过。\n确定已对照证件原件核对、仍按此保存吗？', { title: '号码校验不通过', okText: '仍然保存', cancelText: '返回修改' }))) { showPersonModal(p, pe.preview); return; }
+    const savePhoto = f.savePhoto && f.savePhoto.checked && state.personFile;
+    const c = state.caseData; if (!c) return;
+    const isNew = !p.id; if (isNew) p.id = uid();
+    Object.assign(p, { confirmedAt: Date.now(), confirmedBy: state.user.id, confirmedByName: state.user.name });
+    let extra = null;
+    if (savePhoto) {
+      showBusy('正在保存证件照片…');
+      try {
+        const ph = await processPhoto(state.personFile.file, { caseNumber: c.number, label: (DOC_TYPES[p.docType] || '证件') + '：' + p.name, source: state.personFile.source });
+        const pid = await storePhoto(ph); if (!pid) return;
+        extra = Object.assign(photoRecord(ph, pid), { id: uid(), caption: (DOC_TYPES[p.docType] || '证件') + '：' + p.name });
+      } finally { hideBusy(); }
+    }
+    const saved = await mutateCase(c.id, cc => {
+      cc.persons = cc.persons || [];
+      const i = cc.persons.findIndex(x => x.id === p.id);
+      if (i >= 0) cc.persons[i] = p; else cc.persons.push(p);
+      addLog(cc, isNew ? '确认人员信息' : '修改人员信息', '【' + (p.source === 'ocr' ? DOC_TYPES[p.docType] + '识别，人工核对' : '手工录入') + '】' + p.name + '（' + p.role + '）');
+      if (p.role === '当事人' && !String(cc.party || '').trim()) { cc.party = p.name; addLog(cc, '修改案件信息', '当事人（取自人员信息）'); }
+      if (extra) { cc.extras.push(extra); addLog(cc, '添加补充照片', extra.caption); }
+    });
+    if (!saved) return;
+    state.personEdit = null; state.personFile = null;
+    closeModal(); render();
+    toast('已保存：' + p.name + '（' + p.role + '）。制作笔录时可直接选用', 'ok', 2500);
+  }
+  function personsSectionHtml(c) {
+    const ps = c.persons || [];
+    let html = '<div class="section-title" id="sec-persons"><h2>人员信息 <span class="badge opt">证件辅助录入</span></h2></div><div class="card">' +
+      '<div class="small muted" style="margin-bottom:8px">拍身份证、驾驶证自动识别（本机离线），核对确认后保存；制作笔录时可直接选用，不用重复录入。</div>' +
+      '<div class="row"><button type="button" class="btn btn-sm btn-primary" data-action="person-ocr" data-doc="idcard" data-src="camera">拍身份证识别</button>' +
+      '<button type="button" class="btn btn-sm" data-action="person-ocr" data-doc="idcard" data-src="album">身份证（相册）</button></div>' +
+      '<div class="row" style="margin-top:6px"><button type="button" class="btn btn-sm btn-primary" data-action="person-ocr" data-doc="driver" data-src="camera">拍驾驶证识别</button>' +
+      '<button type="button" class="btn btn-sm" data-action="person-ocr" data-doc="driver" data-src="album">驾驶证（相册）</button>' +
+      '<button type="button" class="btn btn-sm" data-action="person-add">手工添加</button></div>';
+    html += ps.map(p => '<div class="list-item"><div class="grow"><div><strong>' + esc(p.name) + '</strong> <span class="badge">' + esc(p.role) + '</span> <span class="muted small">' + esc(DOC_TYPES[p.docType] || '') + '</span></div>' +
+      '<div class="small break">' + esc(p.idNo || '无身份证号码') + (p.gender ? ' · ' + esc(p.gender) : '') + (p.birth ? ' · ' + esc(p.birth) : '') + (p.licenseClass ? ' · 准驾 ' + esc(p.licenseClass) : '') + '</div>' +
+      (p.address ? '<div class="small muted break">' + esc(p.address) + '</div>' : '') +
+      '<div class="small muted">' + esc(p.confirmedByName || '') + ' 于 ' + fmtTime(p.confirmedAt) + ' 核对确认</div></div>' +
+      '<div class="col"><button type="button" class="btn btn-sm" data-action="person-edit" data-id="' + esc(p.id) + '">编辑</button><button type="button" class="btn btn-sm btn-danger-outline" data-action="person-del" data-id="' + esc(p.id) + '">删除</button></div></div>').join('');
+    return html + '</div>';
+  }
+  // 笔录中"从人员信息填入"
+  function personPickHtml(prefix, D) {
+    const ps = (state.caseData && state.caseData.persons) || [];
+    if (!ps.length || D) return '';
+    return '<div class="person-pick"><span class="muted small">从人员信息填入：</span>' + ps.map(p => '<button type="button" class="btn btn-sm" data-action="rec-pick-person" data-prefix="' + prefix + '" data-id="' + esc(p.id) + '">' + esc(p.name) + '（' + esc(p.role) + '）</button>').join('') + '</div>';
+  }
+
   /* ========================= 业务动作 ========================= */
   async function openCase(id, fromPop) {
     const e = state.index.find(x => x.id === id);
@@ -3207,6 +3437,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     if (c && !(await ensureCaseAccess(c.id))) return;
     if (ctx.kind === 'barcode') return handleBarcodeFile(file);
     if (ctx.kind === 'count') return startSeizedCount(file, ctx.source);
+    if (ctx.kind === 'person') return startPersonOcr(file, ctx.doc, ctx.source);
     if (!c) return;
     let label = '补充照片';
     if (ctx.kind === 'evidence') label = itemLabel(c, ctx.itemId).split(' / ')[1];
@@ -3764,6 +3995,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     line('案件类型', c.typeName);
     line('现场地址', c.address);
     line('当事人', c.party);
+    (c.persons || []).forEach(p => line('人员信息（' + p.role + '）', p.name + (p.idNo ? '，身份证号码 ' + p.idNo : '') + (p.licenseClass ? '，准驾车型 ' + p.licenseClass : '') + (p.address ? '，住址 ' + p.address : '') +
+      '（' + (p.source === 'ocr' ? DOC_TYPES[p.docType] + '识别后' : '手工录入，') + '由 ' + (p.confirmedByName || '') + ' 于 ' + fmtTime(p.confirmedAt) + ' 核对确认）'));
     line('备注', c.note);
     line('采集人（案件创建人）', c.createdByName || nameOf(c.createdBy));
     const takers = [...new Set(files.map(f => f.rec.byName).filter(Boolean))];
@@ -4020,6 +4253,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         toast('案件已创建，请按清单逐项拍照', 'ok');
         return;
       }
+      case 'person': await savePerson(f); return;
       case 'caseInfo': {
         const number = f.number.value.trim();
         if (!number) { toast('案件编号不能为空', 'error'); return; }
@@ -4194,6 +4428,22 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'reload-case': if (await openCase(state.caseData.id, true)) toast('已刷新', 'ok', 1200); return;
       case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
       case 'edit-info': showInfoModal(); return;
+      case 'person-ocr': {
+        state.pendingCapture = { kind: 'person', doc: el.dataset.doc };
+        const inp = el.dataset.src === 'album' ? albumInput : cameraInput;
+        inp.value = ''; inp.click(); return;
+      }
+      case 'person-add': state.personFile = null; showPersonModal({ docType: 'manual', source: 'manual', role: '当事人' }); return;
+      case 'person-edit': {
+        const p = (state.caseData.persons || []).find(x => x.id === el.dataset.id); if (!p) return;
+        state.personFile = null; showPersonModal(Object.assign({}, p)); return;
+      }
+      case 'person-del': {
+        const p = (state.caseData.persons || []).find(x => x.id === el.dataset.id); if (!p) return;
+        if (!(await confirmDialog('确定删除人员信息"' + p.name + '"吗？已填入笔录的内容不受影响。', { danger: true, okText: '删除' }))) return;
+        await mutateCase(state.caseData.id, cc => { cc.persons = (cc.persons || []).filter(x => x.id !== p.id); addLog(cc, '删除人员信息', p.name); });
+        render(); return;
+      }
       case 'next-dismiss': state.nextShotFrom = null; state.nextShotOn = false; render(); toast('本案件不再提示下一项', 'ok', 1500); return;
       case 'delete-case': await deleteCase(); return;
       case 'capture': {
@@ -4305,7 +4555,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         return;
       }
       case 'rf-chip': case 'rec-set-text': case 'rec-officer': case 'rec-officer-add': case 'rec-officer-del': case 'rec-now':
-      case 'qa-hint': case 'qa-edit': case 'qa-up': case 'qa-del': case 'qa-add': case 'qa-add-pick': case 'scene-draft': {
+      case 'qa-hint': case 'qa-edit': case 'qa-up': case 'qa-del': case 'qa-add': case 'qa-add-pick': case 'scene-draft': case 'rec-pick-person': {
         const r = state.recordData;
         if (!r || r.status === 'final') return;
         await recordAction(action, el, r);
@@ -4436,6 +4686,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   async function recordAction(action, el, r) {
     const c = state.caseData;
     switch (action) {
+      case 'rec-pick-person': {
+        if (r.status === 'final') return;
+        const p = ((c && c.persons) || []).find(x => x.id === el.dataset.id); const t = r[el.dataset.prefix]; if (!p || !t) return;
+        ['name', 'idNo', 'gender', 'birth', 'ethnic', 'address', 'phone'].forEach(k => { if (p[k]) t[k] = p[k]; });
+        if (el.dataset.prefix === 'subject' && SUBJECT_ROLES.includes(p.role)) t.role = p.role;
+        touchRecord(); renderKeepScroll(); toast('已填入 ' + p.name + ' 的信息（来自已核对的人员信息）', 'ok', 1800); return;
+      }
       case 'rf-chip': {
         const path = el.dataset.rf, v = el.dataset.v, cur = getPath(r, path);
         if (el.dataset.multi) { const arr = Array.isArray(cur) ? cur.slice() : []; const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); setPath(r, path, arr); }
@@ -4525,6 +4782,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const el = ev.target;
     if (state.view === 'record' && (el.dataset.rf || el.dataset.qa) && el.closest('#view-root')) { onRecordInput(el); return; }
     if (el.hasAttribute('data-price-q')) { renderPriceResults(el.value); return; }
+    if (el.form && el.form.dataset.form === 'person' && ['idNo', 'birth', 'gender', 'name'].includes(el.name)) { refreshPersonChecks(); return; }
     if (el.name === 'leafPrice' && el.closest('form[data-form="stdPrices"]')) { const sp = $('#shred-price'); if (sp) sp.textContent = Number(el.value) > 0 ? money(Number(el.value) * 1.5) : '—'; return; }
     if (el.dataset.filter) {
       state.filters[el.dataset.filter] = el.value;

@@ -192,4 +192,43 @@ async function shelfPhoto(name, o = {}) {
   return { file, boxes: r.boxes, W: r.W, H: r.H };
 }
 
-module.exports = { barcodePhoto, fakeCameraScript, pilePhoto, shelfPhoto };
+// 合成证件照片（示例数据，非真实证件）：kind = 'idcard' | 'driver'；rot 为整张照片的旋转角度
+async function cardPhoto(name, o = {}) {
+  const file = path.join(L.TMP, name + '.jpg');
+  const b = await L.getBrowser(); const page = await b.newPage();
+  const url = await page.evaluate(o => {
+    const W = 1280, H = 860; const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+    x.fillStyle = '#8a8478'; x.fillRect(0, 0, W, H);
+    x.save(); x.translate(W / 2, H / 2); x.rotate((o.tilt || 0) * Math.PI / 180); x.translate(-540, -340);
+    const g = x.createLinearGradient(0, 0, 1080, 680); g.addColorStop(0, o.kind === 'driver' ? '#f3f1ea' : '#e9eef0'); g.addColorStop(1, '#dfe6e3'); x.fillStyle = g; x.fillRect(0, 0, 1080, 680);
+    const L = (t, X, Y) => { x.fillStyle = '#5c7a99'; x.font = '30px "Noto Sans CJK SC", sans-serif'; x.fillText(t, X, Y); };
+    const V = (t, X, Y, s) => { x.fillStyle = '#111'; x.font = (s || 34) + 'px "Noto Sans CJK SC", sans-serif'; x.fillText(t, X, Y); };
+    if (o.kind === 'driver') {
+      x.fillStyle = '#111'; x.font = 'bold 40px "Noto Sans CJK SC", sans-serif'; x.fillText('中华人民共和国机动车驾驶证', 260, 70);
+      L('证号', 60, 140); V('430000198503061232', 170, 140, 38);
+      L('姓名', 60, 210); V('张示例', 170, 210, 38); L('性别', 470, 210); V('男', 560, 210); L('国籍', 680, 210); V('中国', 770, 210);
+      L('住址', 60, 280); V('湖南省郴州市桂阳县示例镇示例村12号', 170, 280, 32);
+      L('出生日期', 60, 360); V('1985-03-06', 230, 360);
+      L('初次领证日期', 60, 430); V('2010-05-20', 290, 430);
+      L('准驾车型', 60, 500); V('C1', 230, 500, 40);
+      L('有效期限', 60, 570); V('2016-05-20 至 2026-05-20', 230, 570);
+    } else {
+      L('姓名', 70, 110); V('张示例', 180, 110, 38);
+      L('性别', 70, 190); V('男', 180, 190); L('民族', 330, 190); V('汉', 440, 190);
+      L('出生', 70, 270); V('1985 年 3 月 6 日', 180, 270);
+      L('住址', 70, 350); V('湖南省郴州市桂阳县示例镇', 180, 350); V('示例村 12 号', 180, 400);
+      L('公民身份号码', 70, 590); V('430000198503061232', 330, 590, 40);
+      x.fillStyle = '#c9cfd3'; x.fillRect(760, 90, 260, 320);
+    }
+    x.restore();
+    let out = c;
+    if (o.rot) { out = document.createElement('canvas'); out.width = H; out.height = W; const y = out.getContext('2d'); y.translate(H / 2, W / 2); y.rotate(o.rot * Math.PI / 180); y.drawImage(c, -W / 2, -H / 2); }
+    const c2 = document.createElement('canvas'); c2.width = out.width; c2.height = out.height; const z = c2.getContext('2d'); z.filter = 'blur(' + (o.blur || 0.8) + 'px)'; z.drawImage(out, 0, 0);
+    return c2.toDataURL('image/jpeg', 0.85);
+  }, o);
+  await page.close();
+  fs.writeFileSync(file, Buffer.from(url.split(',')[1], 'base64'));
+  return file;
+}
+
+module.exports = { barcodePhoto, fakeCameraScript, pilePhoto, shelfPhoto, cardPhoto };
