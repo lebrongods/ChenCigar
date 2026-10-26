@@ -182,6 +182,9 @@ async function addSeized(page, { brand = '', qty = '', unit = '条', barcode = '
 async function packageCase(page) {
   const dl = page.waitForEvent('download', { timeout: 15000 });
   await page.click('[data-action=package]');
+  // 有未核价物品时会先确认"涉案金额不完整"
+  const ok = await page.waitForSelector('.modal:has-text("涉案金额不完整") [data-action=modal-ok]', { timeout: 1500 }).catch(() => null);
+  if (ok) await ok.click();
   const d = await dl;
   const target = path.join(TMP, 'dl-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.zip');
   await d.saveAs(target);

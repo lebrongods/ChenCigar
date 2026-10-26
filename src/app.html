@@ -260,7 +260,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.4.1';
+  const APP_VERSION = '2.4.2';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -491,7 +491,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     return { ok: false };
   }
   function fromHex(hex) { const out = new Uint8Array(hex.length / 2); for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16); return out; }
-  const loginFails = {}; // 仅页面内存计数（体验层限制）
+  // 连续输错计数存在本机（personal 区），刷新页面不会清零
+  const LOGIN_FAILS_KEY = 'login-fails';
 
   /* ========================= 默认模板 ========================= */
   // 以下必拍/选拍清单为示例配置，须由单位依据办案规范确认后在"管理-案件模板"中调整
@@ -686,11 +687,28 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     return ok;
   }
   // 先读取存储中的最新版本再修改，减少多人同时修改时的覆盖
+  // 写入前按共享存储中的最新记录重新核对权限（案件可能已被管理员改派给别人）
+  function denyCaseAccess(id) {
+    toast('该案件已改派给其他人，你已无权查看或修改，已返回案件列表', 'error', 5000);
+    closeScanner(); closeCounter(); if (modal.kind) closeModal(false);
+    clearTimeout(recTimer); recTimer = null;
+    Object.assign(state, { caseId: null, caseData: null, caseDirty: false, recordId: null, recordData: null, seizedEdit: null, lastPackage: null });
+    go('cases', {}, true);
+    run(() => refreshList(true));
+  }
+  async function ensureCaseAccess(id) {
+    const fresh = await getJSON(caseKey(id), true, null);
+    if (fresh && !canSeeCase(fresh)) { denyCaseAccess(id); return false; }
+    return true;
+  }
   async function mutateCase(id, fn, ts) {
     let latest = null;
-    if (!(state.caseDirty && state.caseData && state.caseData.id === id)) latest = normalizeCase(await getJSON(caseKey(id), true, null));
+    const fresh = normalizeCase(await getJSON(caseKey(id), true, null));
+    if (fresh && !canSeeCase(fresh)) { denyCaseAccess(id); return null; }
+    if (!(state.caseDirty && state.caseData && state.caseData.id === id)) latest = fresh;
     if (!latest) latest = state.caseData && state.caseData.id === id ? state.caseData : null;
     if (!latest) { toast('案件数据读取失败', 'error'); return null; }
+    if (fresh && latest !== fresh) { latest.assignedTo = fresh.assignedTo; } // 本地有未保存改动时，承办人仍以最新记录为准，避免把改派覆盖回去
     const r = await fn(latest);
     if (r === false) return null;
     const ok = await saveCase(latest, ts);
@@ -809,7 +827,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   }
   // 压缩（长边 1280、JPEG 0.72）+ 水印 + 缩略图 + SHA-256 + 质量检测 + 定位
   async function processPhoto(file, meta) {
-    const geoP = getGeo();
+    // 相册导入的照片不是此刻在现场拍的，不记录当前定位（否则会把导入时的位置当成拍摄位置）
+    const geoP = meta.source === 'album' ? Promise.resolve(null) : getGeo();
     const src = await loadImageFromFile(file);
     const quality = meta.source === 'camera' ? analyzeQuality(src) : null;
     const capturedAt = Date.now();
@@ -936,7 +955,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   /* ========================= 价格目录与核价 ========================= */
   // 内置价格目录（构建时由 data/price-catalog.json 注入）；管理员可在"管理-价格目录"导入新目录覆盖
   const BUILTIN_CATALOG = /*__PRICE_CATALOG__*/null;
-  const CAT_UNIT_TIAO = { '条': 1, '包': 0.1, '支': 0.005 }; // 按每条 10 包、每包 20 支折算
+  const CAT_UNIT_TIAO = { '条': 1, '包': 0.1, '支': 0.005, '件': 50 }; // 按每件 50 条、每条 10 包、每包 20 支折算
   function activeCatalog() { return state.customCatalog || BUILTIN_CATALOG || { title: '', version: '', issued: '', items: [] }; }
   let catalogIndex = null, catalogIndexSrc = null;
   function catalogMap() {
@@ -983,7 +1002,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     if (!Number.isFinite(q)) return null;
     unit = unit || '条'; priceUnit = priceUnit || '条';
     if (unit === priceUnit) return q;
-    // 卷烟按条计价时，包、支按每条 10 包、每包 20 支折算；雪茄按支计价，各品规每盒支数不同，不做折算
+    // 卷烟按条计价时，件、包、支按每件 50 条、每条 10 包、每包 20 支折算；雪茄按支计价，各品规每盒支数不同，不做折算
     if (priceUnit === '条' && CAT_UNIT_TIAO[unit]) return Math.round(q * CAT_UNIT_TIAO[unit] * 1000) / 1000;
     return null;
   }
@@ -2266,7 +2285,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       '<li>图片计数是按外观找与框选那一条相同的物品，被遮挡、叠压、反光严重的数不出来，外观相近的可能误数；必须逐个核对，数量以现场清点为准。</li>' +
       '<li>备份依靠"管理 - 数据备份"中的<strong>手动导出</strong>，不是自动云备份。</li>' +
       '<li>证据包中的 SHA-256 摘要仅用于核对证据包生成后文件是否被改动，不是防篡改措施；拍摄时间取自手机系统时间，位置取自浏览器定位。</li>' +
-      '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），烟叶、烟丝、空管烟、电子烟按管理员维护的标准价计价；核价表须由经办人核对后签字盖章；卷烟包、支按每条 10 包、每包 20 支折算。</li>' +
+      '<li>自动带出的价格取自系统内的价格目录（当前：' + esc(activeCatalog().title || '无') + '），烟叶、烟丝、空管烟、电子烟按管理员维护的标准价计价；核价表须由经办人核对后签字盖章；卷烟件、包、支按每件 50 条、每条 10 包、每包 20 支折算。</li>' +
       '<li>现场笔录、询问笔录的格式和问题提纲为通用示例，请按本单位模板核对；系统生成的 Word 是电子文本，须打印后由相关人员签名（捺印），系统不提供电子签名。</li></ol></div></div>' + tabbar();
   }
 
@@ -2291,7 +2310,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       id: s.id, kind, sub: s.sub || '烟弹', spec: s.spec || '', barcode: s.barcode || '', matchedCode: s.barcode || '', brand: s.brand || '', qty: s.qty === '' || s.qty == null ? '' : String(s.qty),
       unit: s.unit || '条', price: s.price == null ? '' : String(s.price), priceUnit: s.priceUnit || '条', priceSource: s.priceSource || '', priceCat: s.priceCat || '',
       priceExit: !!s.priceExit, catalogPrice: ['catalog', 'local', 'standard'].includes(s.priceSource) ? s.price : null,
-      matched: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.priceSource : '', thumb: s.thumb || ''
+      matched: s.priceSource === 'catalog' || s.priceSource === 'local' ? s.priceSource : '', thumb: s.thumb || '', matchedName: s.brand || ''
     });
     if (kind !== 'cigarette' && base.catalogPrice == null) base.catalogPrice = stdPriceFor(kind, base.sub);
     return base;
@@ -2395,7 +2414,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const s = state.seizedEdit;
     s.cands = null;
     s.matchedCode = m.code;
-    s.brand = m.name;
+    s.brand = m.name; s.matchedName = m.name;
     s.priceUnit = m.unit || '条';
     s.catalogPrice = m.retail;
     s.price = m.retail == null ? '' : String(m.retail);
@@ -2435,7 +2454,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     syncSeizedForm();
     const s = state.seizedEdit;
     const it = lookupName(s.brand);
-    if (it && s.matchedCode !== it.code) { const typed = s.barcode; applyMatch(it); s.barcode = typed; refreshSeizedLive(); }
+    if (it && s.matchedCode !== it.code) { const typed = s.barcode; applyMatch(it); s.barcode = typed; refreshSeizedLive(); return; }
+    // 条码带出后又手工改成目录外的品名：不再算"价格目录"来源，价格按手工录入，避免品名与价格依据不符
+    if (!it && s.matched === 'catalog' && s.brand !== s.matchedName) {
+      Object.assign(s, { matched: '', priceSource: s.price === '' ? '' : 'manual', priceCat: '', priceExit: false, catalogPrice: null });
+      modalRoot.querySelector('#barcode-msg').innerHTML = '<div class="match warn">品规已手工修改，与条码 ' + esc(s.matchedCode) + ' 在价格目录中的品规不一致；单价按手工录入处理，请核对</div>';
+      modalRoot.querySelector('#subtotal').innerHTML = subtotalText(s);
+    }
   }
   function onSeizedPriceInput() {
     syncSeizedForm();
@@ -3051,15 +3076,16 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   /* ========================= 业务动作 ========================= */
   async function openCase(id, fromPop) {
     const e = state.index.find(x => x.id === id);
-    if (e && !canSeeCase(e)) { toast('无权查看该案件', 'error'); return; }
+    if (e && !canSeeCase(e)) { toast('无权查看该案件', 'error'); if (state.caseId === id) denyCaseAccess(id); return false; }
     state.caseId = id; state.caseData = null; state.caseDirty = false; state.lastPackage = null;
     if (fromPop) { state.view = 'case'; state.packResult = null; render(); } else go('case', { caseId: id });
     const c = normalizeCase(await getJSON(caseKey(id), true, null));
-    if (!c) { toast('案件数据读取失败或已被删除', 'error'); go('cases', {}, true); return; }
-    if (!canSeeCase(c)) { toast('无权查看该案件', 'error'); go('cases', {}, true); return; }
-    if (state.caseId !== id) return;
+    if (!c) { toast('案件数据读取失败或已被删除', 'error'); state.caseId = null; go('cases', {}, true); return false; }
+    if (!canSeeCase(c)) { denyCaseAccess(id); return false; }
+    if (state.caseId !== id) return false;
     state.caseData = c;
     render();
+    return true;
   }
   async function reassignCase(caseId, userId) {
     if (!isAdmin()) { toast('只有管理员可以分配案件', 'error'); return false; }
@@ -3098,6 +3124,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
 
   async function handleCapturedFile(file, ctx) {
     const c = state.caseData;
+    if (c && !(await ensureCaseAccess(c.id))) return;
     if (ctx.kind === 'barcode') return handleBarcodeFile(file);
     if (ctx.kind === 'count') return startSeizedCount(file, ctx.source);
     if (!c) return;
@@ -3177,6 +3204,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   async function saveSeized(next) {
     syncSeizedForm();
     const s = state.seizedEdit; const c = state.caseData;
+    if (!(await ensureCaseAccess(c.id))) return;
     const msg = modalRoot.querySelector('#seized-msg');
     const cig = (s.kind || 'cigarette') === 'cigarette';
     if (cig && !s.brand && !s.qty && !s.barcode) { msg.textContent = '请至少填写条码、品规或数量'; return; }
@@ -3197,7 +3225,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     // 同一品规（卷烟看条码，其他物品看名称）、同一单位已登记过：询问是否合并数量
     let mergeInto = null;
     if (!s.id && (code || !cig) && Number(item.qty) > 0) {
-      const dup = c.seizedItems.find(x => (cig ? x.barcode === code : (x.kind === item.kind && x.brand === item.brand && Number(x.price) === Number(item.price))) && (x.unit || '条') === item.unit && Number(x.qty) > 0);
+      // 单价不同不提示合并，避免第二次录入的单价被丢弃
+      const dup = c.seizedItems.find(x => (cig ? x.barcode === code && x.brand === item.brand : (x.kind === item.kind && x.brand === item.brand)) && Number(x.price) === Number(item.price) && (x.unit || '条') === item.unit && Number(x.qty) > 0);
       if (dup) {
         const snapshot = Object.assign({}, s);
         const ok = await confirmDialog('本案已登记"' + (dup.brand || code) + '" ' + dup.qty + ' ' + dup.unit + '。\n是否把本次的 ' + item.qty + ' ' + item.unit + ' 合并为 ' + (Number(dup.qty) + Number(item.qty)) + ' ' + item.unit + '？', { title: '重复品规', okText: '合并数量', cancelText: '另起一行' });
@@ -3337,6 +3366,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   async function saveRecordNow() {
     clearTimeout(recTimer); recTimer = null;
     const r = state.recordData; if (!r) return true;
+    if (state.caseId && !(await ensureCaseAccess(state.caseId))) return false;
     r.updatedAt = Date.now();
     const ok = await setJSON(recKey(r.id), r, true);
     setSaveInd(ok ? 'saved' : 'fail');
@@ -3522,6 +3552,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   // 顺序不可变：1 校验必拍 → 2 校验涉案物品 → 3 检查 JSZip → 4 生成 ZIP
   async function generatePackage() {
     const c = state.caseData; if (!c) return false;
+    if (!(await ensureCaseAccess(c.id))) return false;
     const block = r => { state.packResult = Object.assign({ ok: false }, r); render(); const el = $('#pack-result'); if (el) el.scrollIntoView({ block: 'center' }); return false; };
     // 1. 必拍照片
     const missing = requiredMissing(c);
@@ -3535,6 +3566,13 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const bad = c.seizedItems.map((s, i) => ({ s, i })).filter(x => !seizedItemValid(x.s));
     if (bad.length) {
       return block({ title: '涉案物品信息不完整，无法生成证据包', items: bad.map(x => ({ text: '第 ' + (x.i + 1) + ' 条：' + (!String(x.s.brand || '').trim() ? '品规未填' : '') + (!(Number(x.s.qty) > 0) ? (String(x.s.brand || '').trim() ? '' : '，') + '数量须大于 0' : '') })) });
+    }
+    // 未核价或单位无法折算的物品不计入涉案金额：打包前明确提示，不按"完整"静默通过
+    const unpriced = c.seizedItems.map((s, i) => ({ s, i, p: priceLine(s) })).filter(x => x.p.amount == null);
+    if (unpriced.length && !(await confirmDialog('以下 ' + unpriced.length + ' 项涉案物品没有计入涉案金额（未核价或单位无法折算）：\n' +
+      unpriced.map(x => '第 ' + (x.i + 1) + ' 条 ' + (x.s.brand || '') + ' ' + x.s.qty + (x.s.unit || '') + '：' + (x.p.hasPrice ? x.p.notes[0] : '未填单价')).join('\n') +
+      '\n\n核价表中这些行标"待核"。仍要生成证据包吗？', { title: '涉案金额不完整', okText: '仍然生成', cancelText: '返回补填' }))) {
+      return block({ title: '有涉案物品未计入涉案金额', items: unpriced.map(x => ({ text: '第 ' + (x.i + 1) + ' 条：' + (x.s.brand || '') + ' ' + (x.p.hasPrice ? x.p.notes[0] : '未填单价') })) });
     }
     // 3. JSZip
     if (typeof JSZip === 'undefined') {
@@ -3636,9 +3674,9 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     L.push('一、清单照片（必拍 ' + s.reqDone + '/' + s.reqTotal + '，选拍 ' + s.optDone + '/' + s.optTotal + '）');
     const photoLines = f => {
       L.push('    文件：' + f.name);
-      L.push('    拍摄时间：' + fmtTime(f.rec.capturedAt) + '（' + tzLabel() + '）　入口：' + (f.rec.source === 'album' ? '相册导入' : '拍照') + (f.rec.byName ? '　拍摄人：' + f.rec.byName : ''));
+      L.push('    ' + (f.rec.source === 'album' ? '导入时间' : '拍摄时间') + '：' + fmtTime(f.rec.capturedAt) + '（' + tzLabel() + '）　入口：' + (f.rec.source === 'album' ? '相册导入' : '拍照') + (f.rec.byName ? '　' + (f.rec.source === 'album' ? '导入人' : '拍摄人') + '：' + f.rec.byName : ''));
       if (f.rec.source === 'album' && f.rec.fileTime) L.push('    原文件修改时间：' + fmtTime(f.rec.fileTime));
-      L.push('    位置：' + (f.rec.geo ? fmtGeo(f.rec.geo) + '，WGS-84' : '未记录'));
+      L.push('    位置：' + (f.rec.geo ? fmtGeo(f.rec.geo) + '，WGS-84' : f.rec.source === 'album' ? '相册导入，不记录位置' : '未记录'));
       if (f.rec.quality && f.rec.quality.issues.length) L.push('    拍照质量提示：' + f.rec.quality.issues.join('、'));
       L.push('    SHA-256：' + f.hash);
     };
@@ -3834,7 +3872,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         state.users = await getJSON(K.users, true, state.users);
         const u = state.users.find(x => x.id === id);
         if (!u) { msg.textContent = '用户不存在'; return; }
-        const fs = loginFails[id] || (loginFails[id] = { count: 0, until: 0 });
+        const fails = await getJSON(LOGIN_FAILS_KEY, false, {}) || {};
+        const fs = fails[id] || (fails[id] = { count: 0, until: 0 });
         if (fs.until > Date.now()) { msg.textContent = '连续输错次数过多，请 ' + Math.ceil((fs.until - Date.now()) / 1000) + ' 秒后再试'; return; }
         const r = await verifyPin(u, pin);
         if (r.error === 'nocrypto') { msg.textContent = '当前浏览器不支持 Web Crypto，无法验证 PIN，请使用最新版浏览器'; return; }
@@ -3842,10 +3881,11 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
           fs.count++;
           if (fs.count >= LOCK_MAX) { fs.count = 0; fs.until = Date.now() + LOCK_MS; msg.textContent = '连续输错 ' + LOCK_MAX + ' 次，已锁定 ' + (LOCK_MS / 1000) + ' 秒'; }
           else msg.textContent = 'PIN 错误，还可尝试 ' + (LOCK_MAX - fs.count) + ' 次';
+          await setJSON(LOGIN_FAILS_KEY, fails, false);
           f.pin.value = '';
           return;
         }
-        delete loginFails[id];
+        if (fails[id]) { delete fails[id]; await setJSON(LOGIN_FAILS_KEY, fails, false); }
         if (r.upgrade) {
           const users = await getJSON(K.users, true, state.users);
           const uu = users.find(x => x.id === id);
@@ -4018,7 +4058,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         return;
       }
       case 'open-case': await openCase(el.dataset.id); return;
-      case 'reload-case': await openCase(state.caseData.id, true); toast('已刷新', 'ok', 1200); return;
+      case 'reload-case': if (await openCase(state.caseData.id, true)) toast('已刷新', 'ok', 1200); return;
       case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
       case 'edit-info': showInfoModal(); return;
       case 'delete-case': await deleteCase(); return;

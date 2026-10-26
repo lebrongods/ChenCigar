@@ -11,6 +11,53 @@ async function visibleNumbers(page) {
 
 module.exports = [
   {
+    name: 'BUG-01 案件改派后，原承办人停留在详情页也不能再补拍/登记/打包/刷新留在页内（写入前按最新记录核对权限）',
+    fn: async () => {
+      const w = L.createWorld();
+      const admin = await L.openPage(w);
+      const li = await L.openPage(w);
+      try {
+        await L.setupAdmin(admin.page);
+        await L.addUser(admin.page, '李稽查', 'inspector', '1111');
+        await L.addUser(admin.page, '赵稽查', 'inspector', '2222');
+        await li.page.reload(); await L.loginOk(li.page, '李稽查', '1111');
+        await L.createCase(li.page, 'R-001');
+        await L.captureItem(li.page, '车头照片', L.img('sharp'));
+        const caseId = JSON.parse(w.shared.get('case-index'))[0].id;
+        const count = () => Object.keys(JSON.parse(w.shared.get('case:' + caseId)).evidence).length;
+        assert(count() === 1, '改派前应能拍照');
+        // 管理员改派给赵
+        await visibleNumbers(admin.page);
+        await admin.page.click('#case-list .case-card:has-text("R-001") [data-action=assign-case]');
+        const zId = JSON.parse(w.shared.get('users')).find(u => u.name === '赵稽查').id;
+        await admin.page.selectOption('form[data-form=assign] [name=user]', zId);
+        await admin.page.click('form[data-form=assign] [type=submit]');
+        await admin.page.waitForSelector('#case-list .case-card:has-text("承办：赵稽查")');
+        // 李未刷新，继续拍"车尾车牌照片"：应被拒绝并退回列表
+        const photoKeys = () => [...w.shared.keys()].filter(k => k.startsWith('photo:')).length;
+        const before = photoKeys();
+        await L.captureItem(li.page, '车尾车牌照片', L.img('sharp2'));
+        await li.page.waitForSelector('#case-list');
+        assert(count() === 1, '改派后原承办人不应再写入照片：' + count());
+        assert(photoKeys() === before, '不应留下孤立的照片数据');
+        assert((await L.toastText(li.page)).includes('无权'), '应提示无权');
+        assert(!(await visibleNumbers(li.page)).includes('R-001'), '列表中不应再出现该案件');
+        // 直接通过历史记录回到案件页再点刷新：应退出，不提示"已刷新"
+        await li.page.evaluate(id => { history.pushState({ view: 'case', caseId: id }, ''); history.back(); history.forward(); }, caseId);
+        await li.page.waitForTimeout(500);
+        if (await li.page.$('[data-action=reload-case]')) {
+          await li.page.click('[data-action=reload-case]');
+          await li.page.waitForSelector('#case-list');
+          assert(!(await L.toastText(li.page)).includes('已刷新'), '无权时不应提示已刷新');
+        }
+        assert(!(await li.page.$('[data-action=package]')), '不应留在案件页');
+        const log = JSON.parse(w.shared.get('case:' + caseId)).log.map(l => l.byName + ':' + l.action);
+        assert(!log.some(l => l.startsWith('李稽查:') && l.includes('照片') && log.indexOf(l) > log.findIndex(x => x.includes('分配承办人'))), '改派后不应有李的写入日志：' + log.join(','));
+        return '改派后补拍被拒绝并退回列表，证据仍为 1 张';
+      } finally { await admin.close(); await li.close(); }
+    }
+  },
+  {
     name: '角色与分配：稽查员只见自己的；未分配仅创建者可见；管理员分配/重新分配（二次确认）',
     fn: async () => {
       const w = L.createWorld();
@@ -169,7 +216,7 @@ module.exports = [
         assert(!(await page.$('#case-list')), '锁定期间不应登录成功');
         await page.clock.fastForward(31000);
         await L.loginOk(page, '管理员甲', '123456');
-        return '第 5 次后锁定；30 秒后可登录（计数仅在页面内存，刷新页面会清零——体验层限制）';
+        return '第 5 次后锁定；30 秒后可登录（计数保存在本机，刷新页面不清零）';
       } finally { await p.close(); }
     }
   },
