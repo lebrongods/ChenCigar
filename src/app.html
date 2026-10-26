@@ -87,6 +87,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--pri); outli
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
 .actionbar .inner { max-width: 696px; margin: 0 auto; display: flex; gap: 8px; }
 .actionbar .btn { flex: 1; }
+.next-shot { max-width: 696px; margin: 0 auto 8px; display: flex; gap: 6px; align-items: center; padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+.next-shot .next-label { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.actionbar .next-shot .btn { flex: 0 0 auto; padding: 8px 12px; }
+.actionbar .next-shot .next-close { padding: 8px; color: var(--muted); }
+.next-spacer { height: 72px; }
 .case-card { cursor: pointer; }
 .case-no { font-size: 16px; overflow-wrap: anywhere; }
 .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -260,7 +265,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.4.3';
+  const APP_VERSION = '2.5.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -1464,6 +1469,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     if (!r) return null;
     r.officers = Array.isArray(r.officers) ? r.officers : [];
     r.status = r.status || 'draft';
+    r.rev = Number(r.rev) || 0;
     if (r.type === 'inquiry') {
       r.subject = Object.assign(blankPerson(), { role: '当事人' }, r.subject || {});
       r.qa = Array.isArray(r.qa) ? r.qa : [];
@@ -1905,8 +1911,25 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     html += '<div class="card" id="sec-log" style="margin-top:16px"><details><summary>操作日志（' + c.log.length + ' 条）</summary>' +
       c.log.slice().reverse().map(l => '<div class="log-line">' + fmtTime(l.at) + ' · ' + esc(l.byName) + ' · ' + esc(l.action) + (l.detail ? '：' + esc(l.detail) : '') + '</div>').join('') + '</details></div>';
     if (canDeleteCase(c)) html += '<button type="button" class="btn btn-danger-outline btn-block" data-action="delete-case">删除本案件</button>';
-    html += '</div><div class="actionbar"><div class="inner"><button type="button" class="btn btn-primary" data-action="package">校验并生成证据包</button></div></div>';
+    const nx = nextShotItem(c);
+    if (nx) html += '<div class="next-spacer"></div>';
+    html += '</div><div class="actionbar">' + (nx ? nextShotHtml(nx) : '') + '<div class="inner"><button type="button" class="btn btn-primary" data-action="package">校验并生成证据包</button></div></div>';
     return html;
+  }
+  // 拍完一项后，提示清单中下一个未拍的必拍项（从刚拍的那项往后找，到末尾再从头找）
+  function nextShotItem(c) {
+    const from = state.nextShotFrom; if (!from) return null;
+    const all = []; c.template.categories.forEach(cat => cat.items.forEach(it => all.push({ cat, it })));
+    const i = all.findIndex(x => x.it.id === from);
+    const order = i < 0 ? all : all.slice(i + 1).concat(all.slice(0, i + 1));
+    return order.find(x => x.it.required && !hasPhoto(c.evidence[x.it.id])) || null;
+  }
+  function nextShotHtml(nx) {
+    const id = esc(nx.it.id);
+    return '<div class="next-shot"><div class="next-label"><span class="muted small">下一项（必拍）</span><strong class="break">' + esc(nx.cat.name) + ' / ' + esc(nx.it.name) + '</strong></div>' +
+      '<button type="button" class="btn btn-primary" data-action="capture" data-src="camera" data-kind="evidence" data-item="' + id + '">拍照</button>' +
+      '<button type="button" class="btn" data-action="capture" data-src="album" data-kind="evidence" data-item="' + id + '">相册</button>' +
+      '<button type="button" class="btn next-close" data-action="next-dismiss" aria-label="不再提示">✕</button></div>';
   }
   function itemTileHtml(c, it) {
     const ev = c.evidence[it.id]; const has = hasPhoto(ev);
@@ -2178,6 +2201,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const s = state.recSave || {};
     if (s.status === 'editing') return '编辑中…';
     if (s.status === 'fail') return '<span class="danger-text">保存失败</span>';
+    if (s.status === 'conflict') return '<span class="danger-text">与他人修改冲突，未保存</span>';
     if (s.status === 'saved') return '已自动保存 ' + fmtTime(s.at).slice(11);
     return '输入内容自动保存';
   }
@@ -2187,7 +2211,10 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const locked = r.status === 'final'; const D = locked ? ' disabled' : '';
     let html = topbar(recordTitle(r), 'case') + '<div class="content rec-editor' + (locked ? ' locked' : '') + '">' +
       '<div class="card small"><div class="row between nowrap"><span class="grow break">' + esc(c.number) + ' · ' + esc(c.typeName) + '</span><span id="save-ind" class="muted">' + saveIndText() + '</span></div>' +
-      (locked ? '<div class="warn-text" style="margin-top:4px">已于 ' + fmtTime(r.finalAt) + ' 由 ' + esc(r.finalByName || '') + ' 定稿，内容已锁定；如需修改请先"解除定稿"。</div>' : '') + '</div>';
+      (locked ? '<div class="warn-text" style="margin-top:4px">已于 ' + fmtTime(r.finalAt) + ' 由 ' + esc(r.finalByName || '') + ' 定稿，内容已锁定；如需修改请先"解除定稿"。</div>' : '') + '</div>' +
+      (state.recConflict ? '<div class="card alert-danger" id="rec-conflict"><strong>笔录冲突：</strong>' + esc(state.recConflict.theirs.savedBy || '其他人') + ' 在 ' + fmtTime(state.recConflict.theirs.updatedAt) +
+        ' 保存了这份笔录' + (state.recConflict.theirs.status === 'final' ? '（并已定稿）' : '') + '，你之后的修改还没有保存。<div class="btn-row">' +
+        '<button type="button" class="btn" data-action="rec-conf-theirs">载入对方版本（放弃我的修改）</button><button type="button" class="btn btn-danger-outline" data-action="rec-conf-mine">用我的版本覆盖</button></div></div>' : '');
     html += recBasicCardHtml(c, r, D);
     if (r.type === 'inquiry') html += inquirySubjectCardHtml(r, D) + qaSectionHtml(c, r, D);
     else html += scenePartyCardHtml(r, D) + sceneFactsCardHtml(c, r, D) + sceneBodyCardHtml(c, r, D);
@@ -3126,6 +3153,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
   async function openCase(id, fromPop) {
     const e = state.index.find(x => x.id === id);
     if (e && !canSeeCase(e)) { toast('无权查看该案件', 'error'); if (state.caseId === id) denyCaseAccess(id); return false; }
+    if (state.caseId !== id) Object.assign(state, { nextShotFrom: null, nextShotOn: true });
     state.caseId = id; state.caseData = null; state.caseDirty = false; state.lastPackage = null;
     if (fromPop) { state.view = 'case'; state.packResult = null; render(); } else go('case', { caseId: id });
     const c = normalizeCase(await getJSON(caseKey(id), true, null));
@@ -3155,8 +3183,11 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       '<form data-form="assign" data-id="' + esc(caseId) + '"><label class="field"><span>承办人</span><select name="user">' + opts + '</select></label>' +
       '<div class="btn-row"><button type="button" class="btn" data-action="modal-close">取消</button><button type="submit" class="btn btn-primary">确定</button></div></form>', 'assign');
   }
+  const INFO_FIELDS = { number: '案件编号', address: '现场地址', party: '当事人', note: '备注', filingDate: '立案日期', cause: '案由' };
   function showInfoModal() {
     const c = state.caseData;
+    // 记下打开编辑框时的内容，保存时据此判断哪些字段是自己改的、哪些是别人在此期间改的
+    state.infoBase = {}; Object.keys(INFO_FIELDS).forEach(k => { state.infoBase[k] = c[k] || ''; });
     showModal('<h3>编辑案件信息</h3><form data-form="caseInfo">' +
       '<label class="field"><span>案件编号 *</span><input type="text" name="number" maxlength="40" value="' + esc(c.number) + '"></label>' +
       '<label class="field"><span>现场地址</span><input type="text" name="address" maxlength="80" value="' + esc(c.address || '') + '"></label>' +
@@ -3213,8 +3244,14 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       addLog(cc, replaced ? '替换照片' : '拍摄照片', itemLabel(cc, ctx.itemId) + (replaced && replaced.sha256 ? '（原照片 SHA-256 前 12 位：' + replaced.sha256.slice(0, 12) + '）' : ''));
     });
     if (saved && replaced && replaced.photoId) await delData(photoKey(replaced.photoId));
+    if (saved && state.nextShotOn !== false) state.nextShotFrom = ctx.itemId;
     render();
-    if (saved) { qualityToast(p); if (!(p.quality && p.quality.issues.length)) toast('已保存：' + label, 'ok', 1500); }
+    if (saved) {
+      qualityToast(p);
+      const nx = state.nextShotOn !== false && nextShotItem(state.caseData);
+      const allDone = state.nextShotOn !== false && !nx && !requiredMissing(state.caseData).length;
+      if (!(p.quality && p.quality.issues.length)) toast('已保存：' + label + (nx ? '。下一项：' + nx.it.name : allDone ? '。必拍项已全部拍完' : ''), 'ok', 2000);
+    }
   }
   function compareDialog(oldThumb, newThumb) {
     return new Promise(resolve => {
@@ -3421,8 +3458,19 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     clearTimeout(recTimer); recTimer = null;
     const r = state.recordData; if (!r) return true;
     if (state.caseId && !(await ensureCaseAccess(state.caseId))) return false;
-    r.updatedAt = Date.now();
+    if (state.recConflict) return false;
+    r.rev = Number(r.rev) || 0;
+    // 保存前比对版本号：别人在此期间保存过这份笔录，就不覆盖，提示用户选择
+    const stored = await getJSON(recKey(r.id), true, null);
+    if (stored && (Number(stored.rev) || 0) !== r.rev) {
+      state.recConflict = { theirs: normalizeRecord(stored) };
+      setSaveInd('conflict'); renderKeepScroll();
+      toast('这份笔录已被 ' + (stored.savedBy || '其他人') + ' 修改，你的修改暂未保存，请选择处理方式', 'error', 6000);
+      return false;
+    }
+    r.updatedAt = Date.now(); r.rev += 1; r.savedBy = state.user.name;
     const ok = await setJSON(recKey(r.id), r, true);
+    if (!ok) r.rev -= 1;
     setSaveInd(ok ? 'saved' : 'fail');
     return ok;
   }
@@ -3457,14 +3505,15 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
     const c = state.caseData;
     const doc = normalizeRecord(await getJSON(recKey(id), true, null));
     if (!doc) { toast('笔录数据读取失败或已被删除', 'error'); return; }
-    Object.assign(state, { recordData: doc, recordId: id, recSave: null, qaEditing: null });
+    Object.assign(state, { recordData: doc, recordId: id, recSave: null, qaEditing: null, recConflict: null });
     // 摘要与正文不一致（如上次未正常退出）时，离开时再同步一次
     const cur = c && (c.records || []).find(x => x.id === id);
     recSyncNeeded = !cur || JSON.stringify(cur) !== JSON.stringify(recordSummary(doc));
     if (fromPop) { state.view = 'record'; render(); window.scrollTo(0, 0); } else go('record', { recordId: id });
   }
   async function leaveRecord() {
-    if (state.recordData) await flushRecord();
+    if (state.recConflict) { toast('笔录冲突未处理，你未保存的修改已放弃', 'warn', 4000); clearTimeout(recTimer); recTimer = null; state.recConflict = null; }
+    else if (state.recordData) await flushRecord();
     Object.assign(state, { recordData: null, recordId: null, qaEditing: null });
   }
   function getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj); }
@@ -3977,12 +4026,30 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
         state.index = await getJSON(K.index, true, state.index);
         if (numberTaken(number, state.caseData.id)) { toast('案件编号已存在，请核对', 'error'); return; }
         const vals = { number, address: f.address.value.trim(), party: f.party.value.trim(), note: f.note.value.trim(), filingDate: f.filingDate.value, cause: f.cause.value.trim() };
+        const base = state.infoBase || {};
+        // 别人在我编辑期间也改了同一字段、且改得不一样：列出来让用户选
+        const latest = await getJSON(caseKey(state.caseData.id), true, null) || state.caseData;
+        const conflicts = Object.keys(vals).filter(k => vals[k] !== (base[k] || '') && (latest[k] || '') !== (base[k] || '') && (latest[k] || '') !== vals[k]);
+        let keepMine = true;
+        if (conflicts.length) {
+          closeModal();
+          const who = (latest.log || []).slice().reverse().find(l => l.action === '修改案件信息');
+          keepMine = await confirmDialog((who ? who.byName + ' 在 ' + fmtTime(who.at) : '其他人') + ' 也修改了以下信息：\n' +
+            conflicts.map(k => INFO_FIELDS[k] + '：对方改为"' + (latest[k] || '（空）') + '"，你改为"' + (vals[k] || '（空）') + '"').join('\n') +
+            '\n\n其他字段已自动合并。这几项用谁的？', { title: '案件信息冲突', okText: '用我的', cancelText: '保留对方的' });
+        }
         await mutateCase(state.caseData.id, cc => {
-          const changed = Object.keys(vals).filter(k => (cc[k] || '') !== vals[k]);
+          const changed = [];
+          Object.keys(vals).forEach(k => {
+            const mine = vals[k], b = base[k] || '', theirs = cc[k] || '';
+            if (mine === b || mine === theirs) return; // 我没改，或与现有内容相同：保留存储中的（含别人的修改）
+            if (theirs !== b && !keepMine) return; // 冲突且选择保留对方的
+            cc[k] = mine; changed.push(k);
+          });
           if (!changed.length) return false;
-          Object.assign(cc, vals);
-          addLog(cc, '修改案件信息', changed.map(k => ({ number: '编号', address: '地址', party: '当事人', note: '备注', filingDate: '立案日期', cause: '案由' }[k])).join('、'));
+          addLog(cc, '修改案件信息', changed.map(k => INFO_FIELDS[k].replace('现场', '').replace('案件', '')).join('、') + (conflicts.length ? '（与他人修改冲突，' + (keepMine ? '采用本人修改' : '保留对方修改') + '）' : ''));
         });
+        state.infoBase = null;
         closeModal(); render();
         return;
       }
@@ -4097,6 +4164,8 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'goto': go(el.dataset.view); return;
       case 'back': {
         const to = el.dataset.to || 'cases';
+        if (state.view === 'record' && state.recConflict && !(await confirmDialog('笔录冲突还没有处理，你未保存的修改离开后会丢失。确定离开吗？', { title: '离开笔录', danger: true, okText: '离开' }))) return;
+        if (state.view === 'record' && state.recConflict) { clearTimeout(recTimer); recTimer = null; state.recConflict = null; state.recordData = null; }
         if (state.view === 'templateEdit') state.editTemplate = null;
         // 上一条历史正好是返回目标时用 history.back()（与手机返回键一致），避免在历史栈里制造"列表 → 案件 → 列表"的环
         const prev = navStack[navStack.length - 2];
@@ -4125,6 +4194,7 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'reload-case': if (await openCase(state.caseData.id, true)) toast('已刷新', 'ok', 1200); return;
       case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
       case 'edit-info': showInfoModal(); return;
+      case 'next-dismiss': state.nextShotFrom = null; state.nextShotOn = false; render(); toast('本案件不再提示下一项', 'ok', 1500); return;
       case 'delete-case': await deleteCase(); return;
       case 'capture': {
         const kind = el.dataset.kind;
@@ -4211,6 +4281,21 @@ body.overlay-open .toast { pointer-events: none; } /* 提示不挡住取景和�
       case 'rec-final': await finalizeRecord(); return;
       case 'rec-unfinal': await unfinalizeRecord(); return;
       case 'rec-del': await deleteRecord(); return;
+      case 'rec-conf-theirs': {
+        const cf = state.recConflict; if (!cf) return;
+        clearTimeout(recTimer); recTimer = null;
+        Object.assign(state, { recordData: cf.theirs, recConflict: null, qaEditing: null });
+        setSaveInd('saved'); recSyncNeeded = true; renderKeepScroll(); toast('已载入对方保存的版本', 'ok'); return;
+      }
+      case 'rec-conf-mine': {
+        const cf = state.recConflict; if (!cf) return;
+        if (!(await confirmDialog('将用你当前的内容覆盖 ' + (cf.theirs.savedBy || '其他人') + ' 保存的版本，对方的修改会丢失（操作日志会记录）。确定吗？', { title: '覆盖他人修改', danger: true, okText: '覆盖' }))) return;
+        const r = state.recordData;
+        if (cf.theirs.status === 'final' && r.status !== 'final') { toast('对方已定稿，不能直接覆盖；请载入对方版本，需要修改时先解除定稿', 'error', 5000); return; }
+        r.rev = cf.theirs.rev; state.recConflict = null;
+        if (await saveRecordNow()) { recSyncNeeded = true; await flushRecord('覆盖他人修改的' + REC_TYPES[r.type], recordTitle(r) + '（原版本由 ' + (cf.theirs.savedBy || '他人') + ' 保存）'); }
+        renderKeepScroll(); return;
+      }
       case 'rec-preview': await previewRecord(); return;
       case 'rec-docx': await downloadRecordDocx(); return;
       case 'rec-geo': await appendGeoToPlace(); return;
