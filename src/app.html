@@ -16,6 +16,38 @@
 * { box-sizing: border-box; }
 html { scroll-padding-top: 64px; scroll-padding-bottom: 96px; } /* 滚动定位时不被顶部栏和底部操作栏挡住 */
 [hidden] { display: none !important; }
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* 登录 / 首次设置 */
+.auth { min-height: 100vh; background: var(--bg); }
+.auth-hero { background: linear-gradient(160deg, #1d5c4a 0%, #154637 60%, #0f3a2d 100%); color: #fff; text-align: center; padding: calc(36px + env(safe-area-inset-top)) 20px 64px; }
+.auth-mark { width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 18px; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; color: #fff; }
+.auth-hero h1 { font-size: 21px; margin: 0 0 6px; letter-spacing: 1px; }
+.auth-hero p { margin: 0; font-size: 14px; opacity: .8; }
+.auth-body { max-width: 440px; margin: -44px auto 0; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+.auth-card { background: #fff; border-radius: 16px; padding: 18px 16px; box-shadow: 0 6px 24px rgba(0,0,0,.08); margin-bottom: 12px; }
+.auth-card h2 { margin: 0 0 4px; }
+.auth-alt { display: flex; align-items: center; gap: 12px; }
+.auth-submit { min-height: 52px; font-size: 17px; margin-top: 4px; }
+.auth-hint { text-align: center; margin: 10px 0 0; }
+.auth-foot { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; padding: 4px 0 8px; }
+.login-users { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin: 8px 0 14px; max-height: 252px; overflow-y: auto; }
+.login-user { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 4px; border: 2px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; min-height: 44px; font: inherit; color: var(--text); }
+.login-user.active { border-color: var(--pri); background: var(--pri-l); }
+.login-user .avatar { width: 40px; height: 40px; border-radius: 50%; background: #e3e8e5; color: #33413b; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; }
+.login-user .avatar.admin { background: #e8e3f6; color: #4f3a8f; }
+.login-user.active .avatar { background: var(--pri); color: #fff; }
+.login-user .nm { font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.login-user .rl { font-size: 12px; color: var(--muted); }
+.pin-field { display: block; text-align: center; }
+.pin-input { display: block; width: 100%; margin-top: 4px; text-align: center; font-size: 28px; letter-spacing: 14px; min-height: 56px; border: 1px solid var(--line); border-radius: 12px; background: #f7f9f8; }
+.pin-input::placeholder { color: #c3cbc7; }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.pin-key { min-height: 56px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font-size: 24px; font-weight: 600; color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pin-key:active { background: var(--pri-l); }
+.pin-key.fn { font-size: 16px; font-weight: 400; color: var(--muted); background: #f4f6f5; }
+.pin-key[disabled], .login-user[disabled] { opacity: .45; }
+.shake { animation: shake .36s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   -webkit-text-size-adjust: 100%; }
@@ -288,7 +320,7 @@ body.overlay-open { overflow: hidden; }
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.6.2';
+  const APP_VERSION = '2.7.0';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -1782,26 +1814,47 @@ body.overlay-open { overflow: hidden; }
   function cryptoMissingCard() {
     return '<div class="card alert-danger"><strong>当前浏览器不支持安全加密接口（Web Crypto）</strong><p class="small">为保护 PIN，系统拒绝在此环境创建账号或登录。请使用最新版 Chrome / Safari，并通过 HTTPS 网址或本地文件方式打开本系统。</p></div>';
   }
+  // 登录页、首次设置页共用的品牌头部（图标为通用示意，不使用任何官方标志）
+  function authHero(sub) {
+    const org = (state.settings && (state.settings.priceOrg || '').trim()) || '';
+    return '<div class="auth-hero"><div class="auth-mark" aria-hidden="true"><svg viewBox="0 0 48 48" width="40" height="40"><path d="M24 4l16 6v11c0 10.5-6.8 19.2-16 23-9.2-3.8-16-12.5-16-23V10z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>' +
+      '<rect x="15" y="19" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="24" cy="25.5" r="3.6" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M19.5 19l1.6-2.6h5.8l1.6 2.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/></svg></div>' +
+      '<h1>涉烟案件现场证据采集系统</h1><p>' + esc(sub || (org ? org : '现场取证 · 涉案物品 · 笔录 · 证据包')) + '</p></div>';
+  }
+  function authFoot() {
+    const mode = Store.backend === 'indexeddb' ? '本机存储模式（数据只在这台手机）' : Store.backend === 'host' ? '共享存储' : '';
+    return '<div class="auth-foot">' + (mode ? '<span>' + mode + '</span>' : '') + '<span>v' + APP_VERSION + '</span></div>';
+  }
   function viewSetup() {
     const ok = hasSubtle();
-    return topbar('首次使用：设置管理员') + '<div class="content">' + storageNotice() + (ok ? '' : cryptoMissingCard()) +
-      '<form class="card" data-form="setup"><p class="muted small">系统尚无账号。请先设置管理员，管理员可添加稽查人员、维护案件模板、分配案件。</p>' +
+    return '<div class="auth">' + authHero('首次使用：设置管理员账号') + '<div class="auth-body">' + (Store.backend === 'memory' ? storageNotice() : '') + (ok ? '' : cryptoMissingCard()) +
+      '<form class="auth-card" data-form="setup"><h2>创建管理员</h2><p class="muted small">系统还没有账号。管理员可以添加稽查人员、维护案件模板、分配案件。</p>' +
       '<label class="field"><span>管理员姓名</span><input type="text" name="name" maxlength="20" autocomplete="off" required></label>' +
       '<label class="field"><span>PIN（4–6 位数字）</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
       '<label class="field"><span>再次输入 PIN</span><input type="password" name="pin2" inputmode="numeric" maxlength="6" autocomplete="new-password" required></label>' +
-      '<button type="submit" class="btn btn-primary btn-block"' + (ok ? '' : ' disabled') + '>创建管理员并进入</button></form>' +
-      '<div class="card"><h3>已有备份？</h3><p class="small muted">换手机或换运行环境时，可直接用之前导出的备份文件还原全部数据，还原后用原账号登录。</p>' +
-      '<button type="button" class="btn btn-block" data-action="import">从备份文件还原</button></div></div>';
+      '<button type="submit" class="btn btn-primary btn-block auth-submit"' + (ok ? '' : ' disabled') + '>创建管理员并进入</button></form>' +
+      '<div class="auth-card auth-alt"><div class="grow"><strong>已有备份？</strong><div class="small muted">换手机时可用之前导出的备份文件还原全部数据。</div></div>' +
+      '<button type="button" class="btn" data-action="import">从备份还原</button></div>' + authFoot() + '</div></div>';
+  }
+  function loginUserTile(u, sel) {
+    return '<button type="button" class="login-user' + (sel ? ' active' : '') + '" data-action="login-pick" data-id="' + esc(u.id) + '" data-name="' + esc(u.name) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' +
+      '<span class="avatar' + (u.role === 'admin' ? ' admin' : '') + '">' + esc(Array.from(u.name)[0] || '?') + '</span><span class="nm">' + esc(u.name) + '</span><span class="rl">' + roleText(u.role) + '</span></button>';
   }
   function viewLogin() {
-    const opts = state.users.map(u => '<option value="' + esc(u.id) + '">' + esc(u.name) + '（' + roleText(u.role) + '）</option>').join('');
-    return topbar('涉烟案件现场证据采集系统') + '<div class="content">' + storageNotice() + (hasSubtle() ? '' : cryptoMissingCard()) +
-      '<form class="card" data-form="login"><h2>登录</h2>' +
-      '<label class="field"><span>选择用户</span><select name="user">' + opts + '</select></label>' +
-      '<label class="field"><span>PIN</span><input type="password" name="pin" inputmode="numeric" maxlength="6" autocomplete="current-password"></label>' +
-      '<div id="login-msg" class="danger-text small"></div>' +
-      '<button type="submit" class="btn btn-primary btn-block">登录</button></form>' +
-      '<p class="muted small" style="text-align:center">v' + APP_VERSION + ' · 忘记 PIN 请联系管理员重置</p></div>';
+    const users = state.users;
+    const sel = users.find(u => u.id === state.loginPick) || users.find(u => u.id === state.lastLoginId) || (users.length === 1 ? users[0] : null);
+    if (sel) state.loginPick = sel.id;
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
+    return '<div class="auth">' + authHero() + '<div class="auth-body">' + (Store.backend === 'memory' ? storageNotice() : '') + (hasSubtle() ? '' : cryptoMissingCard()) + wechatNotice() +
+      '<form class="auth-card" data-form="login" autocomplete="off"><h2>登录</h2>' +
+      '<div class="muted small">选择你的账号</div><div class="login-users">' + users.map(u => loginUserTile(u, sel && u.id === sel.id)).join('') + '</div>' +
+      '<select name="user" class="sr-only" tabindex="-1" aria-hidden="true">' + users.map(u => '<option value="' + esc(u.id) + '"' + (sel && u.id === sel.id ? ' selected' : '') + '>' + esc(u.name) + '（' + roleText(u.role) + '）</option>').join('') + '</select>' +
+      '<label class="pin-field"><span class="muted small">' + (sel ? esc(sel.name) + '，请输入 PIN' : '请先选择账号') + '</span>' +
+      '<input type="password" name="pin" class="pin-input" inputmode="none" maxlength="6" autocomplete="current-password" placeholder="••••" aria-label="PIN"' + (sel ? '' : ' disabled') + '></label>' +
+      '<div id="login-msg" class="danger-text small" role="alert"></div>' +
+      '<div class="pin-pad">' + keys.map(k => '<button type="button" class="pin-key' + (k.length > 1 ? ' fn' : '') + '" data-action="pin-key" data-k="' + k + '"' + (sel ? '' : ' disabled') + '>' + (k === 'clear' ? '清空' : k === 'del' ? '<svg viewBox="0 0 24 24" width="26" height="26" aria-label="删除一位"><path d="M9 5h11a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-6-7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>' : k) + '</button>').join('') + '</div>' +
+      '<button type="submit" class="btn btn-primary btn-block auth-submit"' + (sel ? '' : ' disabled') + '>登录</button>' +
+      '<p class="muted small auth-hint">忘记 PIN 请联系管理员重置</p></form>' + authFoot() + '</div></div>';
   }
 
   /* ========================= 视图：案件列表 ========================= */
@@ -4267,7 +4320,8 @@ body.overlay-open { overflow: hidden; }
     go('login', {}, true);
   }
   async function afterLogin(user) {
-    state.user = user;
+    state.user = user; state.loginPick = null; state.lastLoginId = user.id;
+    await setJSON('last-login', user.id, false); // 下次打开登录页时默认选中
     await setJSON(K.session, { userId: user.id, at: Date.now() }, false);
     state.prefs = Object.assign({ geo: true }, await getJSON(K.prefs, false, {}));
     state.lastRefresh = Date.now();
@@ -4304,6 +4358,7 @@ body.overlay-open { overflow: hidden; }
           fs.count++;
           if (fs.count >= LOCK_MAX) { fs.count = 0; fs.until = Date.now() + LOCK_MS; msg.textContent = '连续输错 ' + LOCK_MAX + ' 次，已锁定 ' + (LOCK_MS / 1000) + ' 秒'; }
           else msg.textContent = 'PIN 错误，还可尝试 ' + (LOCK_MAX - fs.count) + ' 次';
+          const card = f.closest('.auth-card'); if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
           await setJSON(LOGIN_FAILS_KEY, fails, false);
           f.pin.value = '';
           return;
@@ -4515,6 +4570,15 @@ body.overlay-open { overflow: hidden; }
       case 'reload-case': if (await openCase(state.caseData.id, true)) toast('已刷新', 'ok', 1200); return;
       case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
       case 'edit-info': showInfoModal(); return;
+      case 'login-pick': state.loginPick = el.dataset.id; render(); { const i = root.querySelector('.pin-input'); if (i) i.focus(); } return;
+      case 'pin-key': {
+        const i = root.querySelector('.pin-input'); if (!i || i.disabled) return;
+        const k = el.dataset.k;
+        if (k === 'clear') i.value = ''; else if (k === 'del') i.value = i.value.slice(0, -1); else if (i.value.length < 6) i.value += k;
+        $('#login-msg').textContent = '';
+        if (i.value.length === 6) i.form.requestSubmit(); // 6 位输满自动登录；4–5 位点"登录"
+        return;
+      }
       case 'notice-hide': state.prefs.noticeHiddenDay = new Date().toDateString(); await setJSON(K.prefs, state.prefs, false); render(); return;
       case 'person-ocr': {
         state.pendingCapture = { kind: 'person', doc: el.dataset.doc };
@@ -4977,7 +5041,7 @@ body.overlay-open { overflow: hidden; }
       state.prefs = Object.assign({ geo: true }, await getJSON(K.prefs, false, {}));
       state.lastRefresh = Date.now();
       go('cases', {}, true);
-    } else go('login', {}, true);
+    } else { state.lastLoginId = await getJSON('last-login', false, null); go('login', {}, true); }
     if (navigator.storage && navigator.storage.estimate) {
       try {
         const est = await navigator.storage.estimate();

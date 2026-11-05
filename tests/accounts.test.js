@@ -234,5 +234,33 @@ module.exports = [
         return '';
       } finally { await p.close(); }
     }
+  },
+  {
+    name: '登录页：点头像选账号，用数字键盘输 PIN（6 位输满自动登录），PIN 错误有提示；下次打开默认选中上次登录的账号；360px 下无横向滚动',
+    fn: async () => {
+      const w = L.createWorld(); const p = await L.openPage(w, { viewport: { width: 360, height: 740 } }); const page = p.page;
+      try {
+        await L.setupAdmin(page, '王管理', '123456');
+        await L.addUser(page, '李稽查', 'inspector', '246810');
+        await L.logout(page);
+        assert(await page.$('.login-user[data-name="王管理"].active'), '刚登录过的王管理应默认选中');
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '不应有横向滚动');
+        await page.click('.login-user[data-name="李稽查"]');
+        assert((await page.textContent('.pin-field')).includes('李稽查，请输入 PIN'), '应提示所选账号');
+        for (const k of '2468') await page.click('.pin-key[data-k="' + k + '"]');
+        await page.click('.pin-key[data-k="del"]');
+        assert(await page.inputValue('.pin-input') === '246', '退格应删除一位');
+        await page.click('.pin-key[data-k="clear"]');
+        for (const k of '111111') await page.click('.pin-key[data-k="' + k + '"]');
+        await page.waitForSelector('#login-msg:has-text("PIN 错误")');
+        await page.click('.pin-key[data-k="clear"]');
+        for (const k of '246810') await page.click('.pin-key[data-k="' + k + '"]');
+        await page.waitForSelector('#case-list');
+        assert((await page.textContent('.topbar')).includes('李稽查'), '6 位输满应自动登录');
+        await L.logout(page);
+        assert(await page.$('.login-user[data-name="李稽查"].active'), '应默认选中上次登录的李稽查');
+        return '';
+      } finally { await p.close(); }
+    }
   }
 ];

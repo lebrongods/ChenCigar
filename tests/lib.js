@@ -114,8 +114,7 @@ async function setupAdmin(page, name = '管理员甲', pin = '123456') {
 }
 async function login(page, name, pin) {
   await page.waitForSelector('form[data-form=login]');
-  const val = await page.$eval('form[data-form=login] select', (s, n) => [...s.options].find(o => o.textContent.startsWith(n + '（')).value, name);
-  await page.selectOption('form[data-form=login] select', val);
+  await page.click('.login-user[data-name="' + name + '"]');
   await page.fill('form[data-form=login] [name=pin]', pin);
   await page.click('form[data-form=login] [type=submit]');
 }
