@@ -9,7 +9,8 @@ const APP = path.join(ROOT, '证据采集系统.html');
 const APP_URL = 'file://' + APP;
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-test-'));
 const IMG = path.join(TMP, 'img');
-const CHROME = fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome') ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined;
+// 云端环境预装的 Chromium（路径随环境版本变化）；本机没有时由 Playwright 自带浏览器
+const CHROME = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find(p => fs.existsSync(p));
 
 let browser = null;
 async function getBrowser() {

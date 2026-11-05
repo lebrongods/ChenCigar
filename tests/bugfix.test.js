@@ -257,5 +257,28 @@ module.exports = [
         return '';
       } finally { await p.close(); }
     }
+  },
+  {
+    name: '用户管理在 360px 宽手机上：姓名和说明不被按钮挤成一字一行；案件列表顶部提醒合并为一行，可展开说明、当天关闭',
+    fn: async () => {
+      const w = L.createWorld(); const p = await L.openPage(w, { noStorage: true, viewport: { width: 360, height: 760 } }); const page = p.page;
+      try {
+        await L.setupAdmin(page, 'admin', '123456');
+        await L.createCase(page, 'UI-001');
+        await page.click('[data-action=back]'); await page.waitForSelector('#case-list');
+        assert((await page.$$('.notice-bar')).length === 1 && !(await page.$('.card.alert-warn')), '提醒应合并为一行');
+        const h = await page.$eval('.notice-bar', e => e.getBoundingClientRect().height);
+        assert(h <= 60, '提醒条应为一行高：' + h);
+        assert((await page.textContent('.notice-bar')).includes('本机存储模式'), '展开后有说明');
+        await page.click('[data-action=notice-hide]');
+        await page.waitForSelector('.notice-bar', { state: 'detached' });
+        await page.reload(); await page.waitForSelector('#case-list');
+        assert(!(await page.$('.notice-bar')), '当天关闭后刷新也不再显示');
+        await page.click('.tabbar [data-view=admin]'); await page.click('[data-action=goto][data-view=users]');
+        const r = await page.$eval('.user-item', e => ({ item: e.getBoundingClientRect().width, info: e.querySelector('.grow').getBoundingClientRect().width, lines: Math.round(e.querySelector('.muted.small').getBoundingClientRect().height / 20) }));
+        assert(r.info >= r.item * 0.9 && r.lines <= 2, '用户信息应占满整行：' + JSON.stringify(r));
+        return '';
+      } finally { await p.close(); }
+    }
   }
 ];

@@ -35,6 +35,19 @@ p { margin: 6px 0; }
 .card { background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.06); border: 1px solid var(--line); }
 .card.alert-danger { background: var(--danger-l); border-color: #efc2be; }
 .card.alert-warn { background: var(--warn-l); border-color: #f0d9a8; }
+.notice-bar { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; padding: 4px 4px 4px 10px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; font-size: 13px; color: var(--muted); }
+.notice-bar summary { list-style: none; cursor: pointer; min-height: 36px; display: flex; align-items: center; gap: 6px; color: var(--text); }
+.notice-bar summary::-webkit-details-marker { display: none; }
+.notice-bar details[open] summary { margin-bottom: 2px; }
+.notice-bar details > div { padding-bottom: 6px; line-height: 1.5; }
+.nb-dot { flex: 0 0 18px; height: 18px; margin-top: 9px; border-radius: 50%; background: var(--warn); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.nb-more { color: var(--pri); font-size: 12px; }
+.nb-link, .nb-close { border: 0; background: none; min-height: 44px; margin: -4px 0; min-width: 44px; padding: 0 8px; font-size: 14px; cursor: pointer; }
+.nb-link { color: var(--pri); font-weight: 600; white-space: nowrap; }
+.nb-close { color: var(--muted); }
+.user-item { flex-direction: column; align-items: stretch; gap: 8px; }
+.user-item > .grow { width: 100%; }
+.row.user-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .card.alert-ok { background: var(--ok-l); border-color: #b9e0c7; }
 .row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .row.between { justify-content: space-between; }
@@ -275,7 +288,7 @@ body.overlay-open { overflow: hidden; }
   'use strict';
 
   /* ========================= 常量 ========================= */
-  const APP_VERSION = '2.6.1';
+  const APP_VERSION = '2.6.2';
   const PBKDF2_ITER = 100000;
   const LOCK_MAX = 5;
   const LOCK_MS = 30000;
@@ -1821,7 +1834,7 @@ body.overlay-open { overflow: hidden; }
       .map(s => '<option value="' + s[0] + '"' + (f.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>').join('');
     const asg = isAdmin() ? '<select data-filter="assignee" aria-label="承办人"><option value="">全部承办人</option><option value="__none"' + (f.assignee === '__none' ? ' selected' : '') + '>未分配</option>' +
       state.users.map(u => '<option value="' + esc(u.id) + '"' + (f.assignee === u.id ? ' selected' : '') + '>' + esc(u.name) + '</option>').join('') + '</select>' : '';
-    return topbar('案件列表') + '<div class="content">' + storageNotice() + wechatNotice() + backupReminder() +
+    return topbar('案件列表') + '<div class="content">' + (Store.backend === 'memory' ? storageNotice() : listNoticeBar()) + wechatNotice() +
       '<div class="row" style="margin-bottom:10px"><button type="button" class="btn btn-primary grow" data-action="new-case">＋ 新建案件</button>' +
       '<button type="button" class="btn" data-action="refresh">刷新</button></div>' +
       '<div class="filters" style="margin-bottom:6px"><input class="full" type="search" data-filter="q" placeholder="搜索编号 / 当事人 / 地址 / 承办人" value="' + esc(f.q) + '">' +
@@ -1830,14 +1843,19 @@ body.overlay-open { overflow: hidden; }
       '<div class="muted small" id="refresh-info" style="margin-bottom:8px"></div>' +
       '<div id="case-list"></div></div>' + tabbar();
   }
-  function backupReminder() {
-    if (!isAdmin()) return '';
+  // 案件列表顶部的提醒合并成一行：本机存储 + 备份提醒；点"说明"展开，点"✕"当天不再显示
+  function listNoticeBar() {
+    const items = [], details = [];
+    if (Store.backend === 'indexeddb') { items.push('数据仅存本机'); details.push('当前为本机存储模式：数据只保存在这台手机的这个浏览器里，其他人看不到；清除浏览器数据会导致丢失。'); }
     const last = state.settings.lastExportAt;
     const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
-    if (days !== null && days < 7) return '';
-    if (!state.index.length) return '';
-    return '<div class="card alert-warn small">' + (last ? '距上次导出备份已 ' + days + ' 天。' : '尚未导出过数据备份。') +
-      '<button type="button" class="btn btn-sm" data-action="goto" data-view="backup" style="margin-left:6px">去备份</button></div>';
+    const needBackup = isAdmin() && state.index.length && (days === null || days >= 7);
+    if (needBackup) { items.push(last ? days + ' 天未备份' : '尚未备份'); details.push('请管理员定期在"管理 → 数据备份与还原"中导出备份文件并妥善保存。'); }
+    if (!items.length || state.prefs.noticeHiddenDay === new Date().toDateString()) return '';
+    return '<div class="notice-bar" role="note"><span class="nb-dot" aria-hidden="true">!</span>' +
+      '<details class="grow"><summary>' + items.join(' · ') + '<span class="nb-more">说明</span></summary><div class="small">' + details.map(esc).join('<br>') + '</div></details>' +
+      (needBackup ? '<button type="button" class="nb-link" data-action="goto" data-view="backup">去备份</button>' : '') +
+      '<button type="button" class="nb-close" data-action="notice-hide" aria-label="今天不再提示">✕</button></div>';
   }
   function caseCardHtml(e) {
     const st = statusOf(e);
@@ -2030,9 +2048,9 @@ body.overlay-open { overflow: hidden; }
       '<p class="muted small">水印直接绘制在照片上；关闭后新拍照片不加水印，已拍照片不变。</p></div></div>' + tabbar();
   }
   function viewUsers() {
-    const list = state.users.map(u => '<div class="list-item"><div class="grow"><div><strong>' + esc(u.name) + '</strong> <span class="badge ' + (u.role === 'admin' ? 'admin' : '') + '">' + roleText(u.role) + '</span>' +
+    const list = state.users.map(u => '<div class="list-item user-item"><div class="grow"><div><strong>' + esc(u.name) + '</strong> <span class="badge ' + (u.role === 'admin' ? 'admin' : '') + '">' + roleText(u.role) + '</span>' +
       (u.id === state.user.id ? ' <span class="badge ok">当前</span>' : '') + '</div><div class="muted small">执法证号：' + (u.certNo ? esc(u.certNo) : '<span class="warn-text">未填</span>') + ' · 创建于 ' + fmtDate(u.createdAt) + '</div></div>' +
-      '<div class="row"><button type="button" class="btn btn-sm" data-action="user-cert" data-id="' + esc(u.id) + '">执法证号</button><button type="button" class="btn btn-sm" data-action="user-reset" data-id="' + esc(u.id) + '">重置PIN</button>' +
+      '<div class="row user-actions"><button type="button" class="btn btn-sm" data-action="user-cert" data-id="' + esc(u.id) + '">执法证号</button><button type="button" class="btn btn-sm" data-action="user-reset" data-id="' + esc(u.id) + '">重置PIN</button>' +
       '<button type="button" class="btn btn-sm" data-action="user-role" data-id="' + esc(u.id) + '">设为' + (u.role === 'admin' ? '稽查人员' : '管理员') + '</button>' +
       '<button type="button" class="btn btn-sm btn-danger-outline" data-action="user-del" data-id="' + esc(u.id) + '">删除</button></div></div>').join('');
     return topbar('用户管理', 'admin') + '<div class="content"><div class="card">' + list + '</div>' +
@@ -4497,6 +4515,7 @@ body.overlay-open { overflow: hidden; }
       case 'reload-case': if (await openCase(state.caseData.id, true)) toast('已刷新', 'ok', 1200); return;
       case 'assign-case': ev.stopPropagation(); showAssignModal(el.dataset.id); return;
       case 'edit-info': showInfoModal(); return;
+      case 'notice-hide': state.prefs.noticeHiddenDay = new Date().toDateString(); await setJSON(K.prefs, state.prefs, false); render(); return;
       case 'person-ocr': {
         state.pendingCapture = { kind: 'person', doc: el.dataset.doc };
         const inp = el.dataset.src === 'album' ? albumInput : cameraInput;
